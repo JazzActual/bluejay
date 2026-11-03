@@ -32,12 +32,12 @@ class ChunkPrint : public Print {
 void handleIndex() {
   String html =
       "<!doctype html><html><head><meta name=viewport "
-      "content='width=device-width,initial-scale=1'><title>birdbanger</title>"
+      "content='width=device-width,initial-scale=1'><title>bluejay</title>"
       "<style>body{font-family:system-ui,sans-serif;max-width:32em;margin:2em "
       "auto;padding:0 1em}a.b{display:block;margin:.6em 0;padding:.8em;"
       "background:#1a73e8;color:#fff;text-align:center;border-radius:6px;"
       "text-decoration:none}form{margin-top:3em}</style></head><body>"
-      "<h1>birdbanger</h1><p><b>";
+      "<h1>bluejay</h1><p><b>";
   html += store->count();
   html +=
       "</b> sightings logged.</p>"
@@ -91,10 +91,10 @@ void start(LogStore& s) {
   store = &s;
   uint8_t mac[6];
   WiFi.macAddress(mac);
-  snprintf(apSsid, sizeof(apSsid), "%s%02X%02X", BB_AP_SSID_PREFIX, mac[4],
+  snprintf(apSsid, sizeof(apSsid), "%s%02X%02X", BJ_AP_SSID_PREFIX, mac[4],
            mac[5]);
   WiFi.mode(WIFI_AP);
-  WiFi.softAP(apSsid, BB_AP_PASSWORD);
+  WiFi.softAP(apSsid, BJ_AP_PASSWORD);
 
   server = new WebServer(80);
   server->on("/", HTTP_GET, handleIndex);

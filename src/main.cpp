@@ -1,4 +1,4 @@
-// birdbanger — log ALPR / Flock camera sightings with GPS on an M5StickS3.
+// bluejay — log ALPR / Flock camera sightings with GPS on an M5StickS3.
 //
 // Button A (front): log a sighting at the current GPS fix.
 // Button B (side):  toggle the Wi-Fi export access point.
@@ -90,7 +90,7 @@ void drawStatus() {
 
   // Header
   canvas.setTextColor(TFT_ORANGE, TFT_BLACK);
-  canvas.drawString("BIRDBANGER", 4, 2);
+  canvas.drawString("BLUEJAY", 4, 2);
   canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   int batt = M5.Power.getBatteryLevel();
   canvas.setTextDatum(top_right);
@@ -142,7 +142,7 @@ void drawStatus() {
   if (WebExport::active()) {
     canvas.setTextColor(TFT_CYAN, TFT_BLACK);
     canvas.drawString(String("AP ") + WebExport::ssid(), 4, y);
-    canvas.drawString(String("pw ") + BB_AP_PASSWORD + "  " + WebExport::ip(), 4, y + 18);
+    canvas.drawString(String("pw ") + BJ_AP_PASSWORD + "  " + WebExport::ip(), 4, y + 18);
   } else {
     canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     canvas.drawString("[A] log sighting", 4, y);
@@ -169,11 +169,11 @@ void setup() {
   M5.Display.setRotation(1);  // landscape 240x135
   canvas.setColorDepth(16);
   canvas.createSprite(M5.Display.width(), M5.Display.height());
-  M5.Speaker.setVolume(BB_SPEAKER_VOLUME);
+  M5.Speaker.setVolume(BJ_SPEAKER_VOLUME);
 
   storageOk = store.begin();
   gps.begin();
-  Serial.println("birdbanger ready — type 'help'");
+  Serial.println("bluejay ready — type 'help'");
 }
 
 void loop() {

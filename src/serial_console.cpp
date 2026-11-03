@@ -6,7 +6,7 @@ String line;
 
 void printHelp() {
   Serial.println(
-      "birdbanger commands:\n"
+      "bluejay commands:\n"
       "  status        GPS + log status\n"
       "  dump          print log as CSV\n"
       "  geojson       print log as GeoJSON\n"

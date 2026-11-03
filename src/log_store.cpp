@@ -9,9 +9,9 @@ bool LogStore::begin() {
     log_e("LittleFS mount failed");
     return false;
   }
-  if (!LittleFS.exists(BB_LOG_PATH)) return writeHeader();
+  if (!LittleFS.exists(BJ_LOG_PATH)) return writeHeader();
 
-  File f = LittleFS.open(BB_LOG_PATH, "r");
+  File f = LittleFS.open(BJ_LOG_PATH, "r");
   if (!f) return false;
   f.readStringUntil('\n');  // header
   while (f.available()) {
@@ -30,7 +30,7 @@ bool LogStore::begin() {
 }
 
 bool LogStore::writeHeader() {
-  File f = LittleFS.open(BB_LOG_PATH, "w");
+  File f = LittleFS.open(BJ_LOG_PATH, "w");
   if (!f) return false;
   f.println(kHeader);
   f.close();
@@ -38,7 +38,7 @@ bool LogStore::writeHeader() {
 }
 
 bool LogStore::append(Sighting& s) {
-  File f = LittleFS.open(BB_LOG_PATH, "a");
+  File f = LittleFS.open(BJ_LOG_PATH, "a");
   if (!f) return false;
   s.id = _nextId;
   size_t n = f.printf("%lu,%s,%.7f,%.7f,%.1f,%.2f,%lu\n", (unsigned long)s.id,
@@ -54,7 +54,7 @@ bool LogStore::append(Sighting& s) {
 }
 
 bool LogStore::clear() {
-  LittleFS.remove(BB_LOG_PATH);
+  LittleFS.remove(BJ_LOG_PATH);
   _count = 0;
   _nextId = 1;
   _hasLast = false;
@@ -87,7 +87,7 @@ bool LogStore::parseLine(const String& line, Sighting& s) {
 }
 
 void LogStore::streamCsv(Print& out) const {
-  File f = LittleFS.open(BB_LOG_PATH, "r");
+  File f = LittleFS.open(BJ_LOG_PATH, "r");
   if (!f) return;
   uint8_t buf[512];
   size_t n;
@@ -97,7 +97,7 @@ void LogStore::streamCsv(Print& out) const {
 
 void LogStore::streamGeoJson(Print& out) const {
   out.print("{\"type\":\"FeatureCollection\",\"features\":[");
-  File f = LittleFS.open(BB_LOG_PATH, "r");
+  File f = LittleFS.open(BJ_LOG_PATH, "r");
   if (f) {
     f.readStringUntil('\n');
     bool first = true;

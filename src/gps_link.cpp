@@ -8,10 +8,10 @@ struct Probe {
   uint32_t baud;
 };
 const Probe kProbes[] = {
-    {BB_GPS_RX_PIN, BB_GPS_TX_PIN, BB_GPS_BAUD},
-    {BB_GPS_TX_PIN, BB_GPS_RX_PIN, BB_GPS_BAUD},
-    {BB_GPS_RX_PIN, BB_GPS_TX_PIN, 9600},
-    {BB_GPS_TX_PIN, BB_GPS_RX_PIN, 9600},
+    {BJ_GPS_RX_PIN, BJ_GPS_TX_PIN, BJ_GPS_BAUD},
+    {BJ_GPS_TX_PIN, BJ_GPS_RX_PIN, BJ_GPS_BAUD},
+    {BJ_GPS_RX_PIN, BJ_GPS_TX_PIN, 9600},
+    {BJ_GPS_TX_PIN, BJ_GPS_RX_PIN, 9600},
 };
 constexpr uint8_t kNumProbes = sizeof(kProbes) / sizeof(kProbes[0]);
 HardwareSerial& gpsSerial = Serial1;
@@ -47,19 +47,19 @@ void GpsLink::poll() {
   }
 
   if (_locked) {
-    if (now - _lastGoodMs > BB_GPS_LINK_TIMEOUT_MS) {
+    if (now - _lastGoodMs > BJ_GPS_LINK_TIMEOUT_MS) {
       log_w("GPS link lost, re-probing");
       _locked = false;
       applyProbe(_probe);  // retry current settings first
     }
-  } else if (now - _probeStartMs > BB_GPS_PROBE_MS) {
+  } else if (now - _probeStartMs > BJ_GPS_PROBE_MS) {
     applyProbe(_probe + 1);
   }
 }
 
 bool GpsLink::hasFix() {
   return _locked && _gps.location.isValid() &&
-         _gps.location.age() < BB_MAX_FIX_AGE_MS && _gps.date.isValid() &&
+         _gps.location.age() < BJ_MAX_FIX_AGE_MS && _gps.date.isValid() &&
          _gps.time.isValid() && _gps.date.year() >= 2020;
 }
 

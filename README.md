@@ -1,5 +1,5 @@
-# birdbanger
-Named for the pyrotechnic device that avian control specialists use to prevent damage to crops, aircraft, and property. Bird banger is an ESP32 firmware that helps visually log flock cameras and other ALPRs for more precise reporting at a later time.
+# BlueJay
+BlueJay is an ESP32 firmware that helps visually log Flock cameras and other ALPRs for more precise reporting at a later time.
 
 ## Hardware
 
@@ -26,7 +26,7 @@ pio device monitor       # serial console, 115200
 Each sighting is appended to `/sightings.csv` on internal flash (LittleFS) with the columns `id,utc,lat,lon,alt_m,hdop,sats`.
 
 ### Export over Wi-Fi
-Press B, join `birdbanger-XXXX` (the password is shown on screen and set in `src/config.h`), then open `http://192.168.4.1/` to download CSV or GeoJSON, or to clear the log.
+Press B, join `bluejay-XXXX` (the password is shown on screen and set in `src/config.h`), then open `http://192.168.4.1/` to download CSV or GeoJSON, or to clear the log.
 
 ### Export over USB serial
 Open the serial monitor and type:
