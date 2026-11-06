@@ -11,7 +11,7 @@
       ░                                          ░ ░     
 ```
 
-BlueJay is an ESP32 firmware that helps visually log Flock cameras and other ALPRs for more precise reporting at a later time.
+Named for the Blue Jay, a bird that is known for raiding the nests of other birds and eating the eggs: BlueJay is an ESP32 firmware that helps visually log Flock cameras and other ALPRs for more precise reporting at a later time.
 
 ## Hardware
 
