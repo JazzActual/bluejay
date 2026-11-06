@@ -1,7 +1,8 @@
 // bluejay — log ALPR / Flock camera sightings with GPS.
 // Runs on M5StickS3 or AtomS3R (see platformio.ini / config.h).
 //
-// StickS3: Button A (front) logs a sighting, Button B (side) toggles Wi-Fi.
+// StickS3: Button A (front) logs a sighting. Button B (side) turns the screen
+// on, and holding it for 3 s toggles Wi-Fi.
 // AtomS3R: tap the screen button to log, hold it to toggle Wi-Fi.
 // USB serial: type "help" for dump/export commands.
 
@@ -29,6 +30,30 @@ enum class Flash { None, Logged, NoFix, Error };
 Flash flash = Flash::None;
 uint32_t flashUntilMs = 0;
 uint32_t lastDrawMs = 0;
+bool screenOn = true;
+uint32_t lastActivityMs = 0;
+
+// Counts as activity, so it also restarts the screen timeout.
+void wakeScreen() {
+  lastActivityMs = millis();
+  if (screenOn) return;
+  M5.Display.wakeup();
+  M5.Display.setBrightness(BJ_SCREEN_BRIGHTNESS);
+  screenOn = true;
+  lastDrawMs = 0;  // force redraw
+  log_i("Screen on");
+}
+
+// Wi-Fi keeps the screen on: it shows the password and is a reminder that the
+// radio is draining the battery.
+void updateScreenTimeout() {
+  if (!screenOn || WebExport::active()) return;
+  if (millis() - lastActivityMs < BJ_SCREEN_TIMEOUT_MS) return;
+  M5.Display.setBrightness(0);
+  M5.Display.sleep();
+  screenOn = false;
+  log_i("Screen off");
+}
 
 void beep(uint16_t freq, uint32_t ms) {
 #if BJ_HAS_SPEAKER
@@ -227,8 +252,9 @@ void drawStatus() {
     canvas.drawString(buf, 4, y + 18);
   }
 
-  // Log state
-  y = 66;
+  // Log state. The Wi-Fi footer needs a third line, so everything moves up.
+  const bool wifiOn = WebExport::active();
+  y = wifiOn ? 62 : 66;
   canvas.setTextColor(TFT_WHITE, TFT_BLACK);
   if (!storageOk) {
     canvas.setTextColor(TFT_RED, TFT_BLACK);
@@ -243,17 +269,23 @@ void drawStatus() {
   }
 
   // Footer
-  canvas.drawFastHLine(0, 88, w, TFT_DARKGREY);
-  y = 92;
-  if (WebExport::active()) {
+  canvas.drawFastHLine(0, wifiOn ? 80 : 88, w, TFT_DARKGREY);
+  y = wifiOn ? 83 : 92;
+  if (wifiOn) {
     canvas.setTextColor(TFT_CYAN, TFT_BLACK);
     canvas.drawString(String("AP ") + WebExport::ssid() + "  " + WebExport::ip(), 4, y);
-    canvas.drawString(String("pw ") + ApPassword::get(), 4, y + 18);
+    canvas.drawString(String("pw ") + ApPassword::get(), 4, y + 17);
+    canvas.setTextColor(TFT_YELLOW, TFT_BLACK);
+#if BJ_HAS_BTN_B
+    canvas.drawString("[B] hold 3s: wifi off", 4, y + 34);
+#else
+    canvas.drawString("hold: wifi off", 4, y + 34);
+#endif
   } else {
     canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
 #if BJ_HAS_BTN_B
     canvas.drawString("[A] log sighting", 4, y);
-    canvas.drawString("[B] wifi export", 4, y + 18);
+    canvas.drawString("[B] hold 3s: wifi export", 4, y + 18);
 #else
     canvas.drawString("tap: log sighting", 4, y);
     canvas.drawString("hold: wifi export", 4, y + 18);
@@ -272,6 +304,9 @@ void setup() {
   auto cfg = M5.config();
   M5.begin(cfg);
   Serial.begin(115200);
+  setCpuFrequencyMhz(BJ_CPU_MHZ);
+  log_i("CPU %lu MHz", (unsigned long)getCpuFrequencyMhz());
+  M5.Display.setBrightness(BJ_SCREEN_BRIGHTNESS);
 
 #if BJ_GROVE_5V_SWITCHED
   // Grove 5V is an input by default on StickS3; switch it to output so the
@@ -287,13 +322,16 @@ void setup() {
 #if BJ_HAS_SPEAKER
   M5.Speaker.setVolume(BJ_SPEAKER_VOLUME);
 #endif
-#if !BJ_HAS_BTN_B
+#if BJ_HAS_BTN_B
+  M5.BtnB.setHoldThresh(BJ_BTN_B_HOLD_WIFI_MS);
+#else
   M5.BtnA.setHoldThresh(BJ_HOLD_WIFI_MS);
 #endif
 
   storageOk = store.begin();
   ApPassword::begin();
   gps.begin();
+  lastActivityMs = millis();
   Serial.println("bluejay ready on " BJ_BOARD_NAME " — type 'help'");
 }
 
@@ -304,16 +342,31 @@ void loop() {
   SerialConsole::poll(store, gps);
 
   // wasClicked() only fires on a release before the hold threshold, so a
-  // long hold toggles Wi-Fi without also logging a sighting.
-  if (M5.BtnA.wasClicked()) logSighting();
+  // long hold toggles Wi-Fi without also logging a sighting. Logging works with
+  // the screen off, so a sighting is never lost to a press that only wakes it.
+  if (M5.BtnA.wasClicked()) {
+    wakeScreen();
+    logSighting();
+  }
 #if BJ_HAS_BTN_B
-  if (M5.BtnB.wasClicked()) toggleWifi();
+  if (M5.BtnB.wasPressed()) wakeScreen();
+  if (M5.BtnB.wasHold()) {
+    wakeScreen();
+    toggleWifi();
+  }
 #else
-  if (M5.BtnA.wasHold()) toggleWifi();
+  if (M5.BtnA.wasHold()) {
+    wakeScreen();
+    toggleWifi();
+  }
 #endif
 
-  if (millis() - lastDrawMs > 200) {
+  updateScreenTimeout();
+
+  if (screenOn && millis() - lastDrawMs > 200) {
     lastDrawMs = millis();
     draw();
   }
+
+  delay(BJ_LOOP_DELAY_MS);
 }

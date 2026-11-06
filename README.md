@@ -41,14 +41,17 @@ pio device monitor       # serial console, 115200
 | StickS3 | AtomS3R | Action |
 |---|---|---|
 | Button A (front) | Tap the screen | Log a sighting at the current fix. Refused with a red "NO FIX" screen if the fix is stale (>3 s) or missing. |
-| Button B (side) | Hold the screen for 1.5 s | Turn the Wi-Fi export AP on or off |
+| Button B (side) | | Turn the screen on |
+| Hold Button B for 3 s | Hold the screen for 1.5 s | Turn the Wi-Fi export AP on or off |
 
 The AtomS3R has no speaker, so the green or red screen flash is the only confirmation.
+
+The screen turns off after 30 s unless Wi-Fi is on. The GPS keeps its fix and logging still works while it's off.
 
 Each sighting is appended to `/sightings.csv` on internal flash (LittleFS) with the columns `id,utc,lat,lon,alt_m,hdop,sats`.
 
 ### Export over Wi-Fi
-Press B (or hold the AtomS3R button), join `bluejay-XXXX` using the password shown on screen, then open `http://192.168.4.1/` to download CSV or GeoJSON, change the password, or clear the log.
+Hold B for 3 s (or hold the AtomS3R button), join `bluejay-XXXX` using the password shown on screen, then open `http://192.168.4.1/` to download CSV or GeoJSON, change the password, or clear the log.
 
 The password is random per device.
 

@@ -29,8 +29,9 @@
   #error "No board selected: build with -e m5stack-sticks3 or -e m5stack-atoms3r"
 #endif
 
-// Single-button boards: hold this long to toggle the Wi-Fi export AP.
-#define BJ_HOLD_WIFI_MS 1500
+// Hold this long to toggle the Wi-Fi export AP.
+#define BJ_HOLD_WIFI_MS 1500        // single-button boards
+#define BJ_BTN_B_HOLD_WIFI_MS 3000  // boards with Button B
 
 // ---- GPS unit (Unit GPS v1.1, AT6668) ----
 #define BJ_GPS_BAUD 115200      // AT6668 factory default
@@ -55,3 +56,9 @@
 
 // ---- Feedback ----
 #define BJ_SPEAKER_VOLUME 64    // 0-255. Keep well under ~75% on battery.
+
+// ---- Power ----
+#define BJ_CPU_MHZ 80           // lowest speed Wi-Fi supports
+#define BJ_LOOP_DELAY_MS 10     // idle time per loop; the GPS UART buffers meanwhile
+#define BJ_SCREEN_BRIGHTNESS 80 // 0-255
+#define BJ_SCREEN_TIMEOUT_MS 30000  // stays on while Wi-Fi is on
