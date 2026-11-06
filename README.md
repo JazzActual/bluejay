@@ -60,4 +60,4 @@ Open the serial monitor and type:
 - `clear DELETE`: erase the log
 
 ## Map viewer
-`docs/` is a GitHub Pages site that maps a CSV or GeoJSON export. Files stay in the browser.
+[Open the map viewer](https://jazzactual.github.io/bluejay/) to map a CSV or GeoJSON export. Files stay in the browser.
