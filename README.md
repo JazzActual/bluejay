@@ -29,6 +29,8 @@ At boot the firmware tries both Grove pin orientations at 115200 and then 9600 b
 
 ## Build & flash
 
+[Install from your browser](https://jazzactual.github.io/bluejay/flash.html) with Chrome or Edge, or build it yourself:
+
 ```sh
 brew install platformio
 pio run -e m5stack-sticks3 -t upload   # StickS3 (the default env)
