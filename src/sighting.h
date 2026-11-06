@@ -14,15 +14,18 @@ struct Sighting {
 };
 
 struct SightingType {
+  char key;           // lowercase letter that picks it after logging
   const char* slug;   // stored in the log; no commas, under 12 characters
   const char* label;  // shown on screen
 };
 
-// Quick tags: the number key after logging picks the entry at that position.
+// Quick tags, also labeled in docs/app.js. Changing a key doesn't affect logged
+// sightings, since they store the slug.
 static const SightingType kSightingTypes[] = {
-    {"flock", "Flock"},
-    {"alpr", "Other ALPR"},
-    {"unknown", "Unknown"},
+    {'f', "flock", "Flock"},
+    {'v', "vigilant", "Vigilant"},
+    {'g', "genetec", "Genetec"},
+    {'a', "axon", "Axon"},
 };
 static const int kNumSightingTypes =
     sizeof(kSightingTypes) / sizeof(kSightingTypes[0]);

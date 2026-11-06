@@ -4,7 +4,7 @@
 // StickS3: Button A (front) logs a sighting. Button B (side) turns the screen
 // on, and holding it for 3 s toggles Wi-Fi.
 // AtomS3R: tap the screen button to log, hold it to toggle Wi-Fi.
-// Cardputer ADV: Enter logs and a number key tags it. Esc opens the menu.
+// Cardputer ADV: Enter logs and a letter key tags it. Esc opens the menu.
 // USB serial: type "help" for dump/export commands.
 
 #include <M5Unified.h>
@@ -188,13 +188,16 @@ void drawFlash() {
   canvas.drawString(sub, canvas.width() / 2, canvas.height() / 2 + (small ? 18 : 24));
 #if BJ_HAS_KEYBOARD
   if (flash == Flash::Logged) {
-    String tags;
+    // Two per row, as they don't all fit on one line.
+    String rows[2];
     for (int i = 0; i < kNumSightingTypes; i++) {
-      if (i) tags += "  ";
-      tags += String(i + 1) + " " + kSightingTypes[i].label;
+      String& row = rows[i < 2 ? 0 : 1];
+      if (row.length()) row += "  ";
+      row += String((char)toupper(kSightingTypes[i].key)) + " " + kSightingTypes[i].label;
     }
     canvas.setFont(&fonts::Font2);
-    canvas.drawString(tags, canvas.width() / 2, canvas.height() - 12);
+    canvas.drawString(rows[0], canvas.width() / 2, canvas.height() - 26);
+    canvas.drawString(rows[1], canvas.width() / 2, canvas.height() - 9);
   }
 #endif
   canvas.setTextDatum(top_left);
@@ -382,8 +385,14 @@ void draw() {
 }
 
 #if BJ_HAS_KEYBOARD
-void tagLast(int number) {
-  const char* slug = kSightingTypes[number - 1].slug;
+// False if this key isn't a tag.
+bool tagLast(char keyChar) {
+  const SightingType* match = nullptr;
+  for (int i = 0; i < kNumSightingTypes; i++) {
+    if (kSightingTypes[i].key == tolower(keyChar)) match = &kSightingTypes[i];
+  }
+  if (!match) return false;
+  const char* slug = match->slug;
   if (store.setLastType(slug)) {
     Serial.printf("tagged %s\n", slug);
     showFlash(Flash::Tagged);
@@ -391,6 +400,7 @@ void tagLast(int number) {
     showFlash(Flash::Error);
     beep(300, 400);
   }
+  return true;
 }
 
 void handleKey(const Key& key) {
@@ -413,10 +423,7 @@ void handleKey(const Key& key) {
     return;
   }
 #endif
-  if (flash == Flash::Logged && key.ch >= '1' && key.ch < '1' + kNumSightingTypes) {
-    tagLast(key.ch - '0');
-    return;
-  }
+  if (flash == Flash::Logged && key.ch && tagLast(key.ch)) return;
   if (key.enter) {
     logSighting();
   } else if (key.esc) {

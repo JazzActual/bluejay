@@ -49,7 +49,7 @@ pio device monitor       # serial console, 115200
 | Button B (side) | | Turn the screen on |
 | Hold Button B for 3 s | Hold the screen for 1.5 s | Turn the Wi-Fi export AP on or off |
 
-On the Cardputer ADV, Enter logs a sighting and Esc opens the menu. Press 1 (Flock), 2 (other ALPR), or 3 (unknown) within 5 s of logging to tag it. Keep the power switch OFF when connecting it to a computer.
+On the Cardputer ADV, Enter logs a sighting and Esc opens the menu. Press F (Flock), V (Vigilant), G (Genetec), or A (Axon) within 5 s of logging to tag it. Keep the power switch OFF when connecting it to a computer.
 
 The AtomS3R has no speaker, so the green or red screen flash is the only confirmation.
 
