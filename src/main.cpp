@@ -14,6 +14,7 @@
 #include "menu.h"
 #endif
 #include "ap_password.h"
+#include "bluejay.h"
 #include "config.h"
 #include "gps_link.h"
 #include "log_store.h"
@@ -40,6 +41,7 @@ uint32_t lastDrawMs = 0;
 bool screenOn = true;
 uint32_t lastActivityMs = 0;
 #ifdef BJ_TEST_SERIAL
+int testGpsState = -1;  // -1 real, 0 searching, 1 no fix, 2 fix
 bool testP0 = false;
 
 // Test builds only: drives P0 of the Cap LoRa-1262's PI4IOE expander, which
@@ -272,104 +274,164 @@ void drawStatusCompact() {
   canvas.drawString("hold: wifi", 2, 112);
 }
 
+// Colors from the bird sprite, so the bars and branch match it.
+constexpr uint16_t kBarColor = 0x18E5;
+constexpr uint16_t kBranchColor = 0x8AC5;
+constexpr uint16_t kBranchShadeColor = 0x59C3;
+constexpr int kTopBarHeight = 20;
+constexpr int kBottomBarHeight = 19;
+
+void drawTopBar(int w) {
+  canvas.fillRect(0, 0, w, kTopBarHeight, kBarColor);
+
+  int rightEdge = w - 4;
+#if BJ_HAS_BATTERY
+  canvas.setTextColor(TFT_LIGHTGREY, kBarColor);
+  const String batt = String(M5.Power.getBatteryLevel()) + "%" + (M5.Power.isCharging() ? "+" : "");
+  canvas.setTextDatum(top_right);
+  canvas.drawString(batt, rightEdge, 2);
+  canvas.setTextDatum(top_left);
+  rightEdge -= canvas.textWidth(batt) + 6;
+#endif
+
+  bool linkUp = gps.linkUp();
+  bool hasFix = gps.hasFix();
+  uint32_t sats = gps.satellites();
+  uint32_t inView = gps.satellitesInView();
+  int bestDb = gps.bestSignalDb();
+  double lat = gps.lat();
+  double lon = gps.lon();
+#ifdef BJ_TEST_SERIAL
+  // Lets a script see every state without showing a real location.
+  if (testGpsState >= 0) {
+    linkUp = testGpsState > 0;
+    hasFix = testGpsState == 2;
+    sats = 18;
+    inView = 25;
+    bestDb = 42;
+    lat = 39.7392;
+    lon = -104.9903;
+  }
+#endif
+
+  if (!linkUp) {
+    canvas.setTextColor(TFT_YELLOW, kBarColor);
+    canvas.drawString("GPS searching...", 4, 2);
+  } else if (!hasFix) {
+    canvas.setTextColor(TFT_RED, kBarColor);
+    canvas.drawString("NO FIX", 4, 2);
+    const int x = 4 + canvas.textWidth("NO FIX") + 6;
+    canvas.setTextColor(TFT_LIGHTGREY, kBarColor);
+    canvas.drawString(String(inView) + " in view  " + String(bestDb) + " dB", x, 2);
+  } else {
+    const String fix = String(sats) + " sat";
+    canvas.setTextColor(TFT_GREEN, kBarColor);
+    canvas.drawString(fix, 4, 2);
+    const int x = 4 + canvas.textWidth(fix) + 6;
+    // Fewer decimals if the coordinates won't fit beside the battery level.
+    char coords[32];
+    snprintf(coords, sizeof(coords), "%.6f,%.6f", lat, lon);
+    if (x + canvas.textWidth(coords) > rightEdge) {
+      snprintf(coords, sizeof(coords), "%.4f,%.4f", lat, lon);
+    }
+    canvas.setTextColor(TFT_WHITE, kBarColor);
+    canvas.drawString(coords, x, 2);
+  }
+}
+
+void drawBottomBar(int w, int h) {
+  const int y = h - kBottomBarHeight;
+  canvas.fillRect(0, y, w, kBottomBarHeight, kBarColor);
+  if (!storageOk) {
+    canvas.setTextColor(TFT_RED, kBarColor);
+    canvas.drawString("STORAGE ERROR", 4, y + 2);
+    return;
+  }
+  canvas.setTextColor(TFT_WHITE, kBarColor);
+  canvas.drawString("Logged: " + String(store.count()), 4, y + 2);
+  Sighting last;
+  if (store.last(last)) {
+    canvas.setTextColor(TFT_LIGHTGREY, kBarColor);
+    canvas.setTextDatum(top_right);
+    String detail = last.utc + 11;
+#if BJ_HAS_KEYBOARD
+    detail = String(sightingTypeLabel(last.type)) + "  " + detail;
+#endif
+    canvas.drawString(detail, w - 4, y + 2);
+    canvas.setTextDatum(top_left);
+  }
+}
+
+// Extends the branch in the 96 px sprite to both screen edges.
+void drawBranch(int w, int birdX, int birdY) {
+  canvas.fillRect(0, birdY + 82, birdX, 6, kBranchColor);
+  canvas.fillRect(0, birdY + 88, birdX, 2, kBranchShadeColor);
+  const int rightX = birdX + BLUEJAY_96_W;
+  canvas.fillRect(rightX, birdY + 84, w - rightX, 6, kBranchColor);
+  canvas.fillRect(rightX, birdY + 90, w - rightX, 2, kBranchShadeColor);
+}
+
+void drawHome(int w) {
+  const int birdX = (w - BLUEJAY_96_W) / 2;
+  const int birdY = kTopBarHeight;
+  drawBranch(w, birdX, birdY);
+  canvas.pushImage(birdX, birdY, BLUEJAY_96_W, BLUEJAY_96_H, bluejay_96);
+
+  const int rightX = birdX + BLUEJAY_96_W + 4;
+  canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+#if BJ_HAS_KEYBOARD
+  canvas.drawString("[Enter]", 4, 34);
+  canvas.drawString("log", 4, 52);
+  canvas.drawString("[Esc]", rightX, 34);
+  canvas.drawString("menu", rightX, 52);
+#elif BJ_HAS_BTN_B
+  canvas.drawString("[A]", 4, 34);
+  canvas.drawString("log", 4, 52);
+  canvas.drawString("[B] hold", rightX, 34);
+  canvas.drawString("3s: wifi", rightX, 52);
+#else
+  canvas.drawString("tap", 4, 34);
+  canvas.drawString("log", 4, 52);
+  canvas.drawString("hold", rightX, 34);
+  canvas.drawString("wifi", rightX, 52);
+#endif
+}
+
+// The small bird makes room for what's needed to connect.
+void drawWifiHome(int w, int h) {
+  canvas.pushImage(w - BLUEJAY_48_W, h - kBottomBarHeight - BLUEJAY_48_H, BLUEJAY_48_W,
+                   BLUEJAY_48_H, bluejay_48);
+  canvas.setTextColor(TFT_CYAN, TFT_BLACK);
+  canvas.drawString(WebExport::ssid(), 4, 24);
+  canvas.drawString(WebExport::ip(), 4, 42);
+  canvas.drawString(String("pw ") + ApPassword::get(), 4, 60);
+  canvas.setTextColor(TFT_YELLOW, TFT_BLACK);
+#if BJ_HAS_KEYBOARD
+  canvas.drawString("[Esc] menu:", 4, 78);
+  canvas.drawString("wifi off", 4, 96);
+#elif BJ_HAS_BTN_B
+  canvas.drawString("[B] hold 3s:", 4, 78);
+  canvas.drawString("wifi off", 4, 96);
+#else
+  canvas.drawString("hold: wifi off", 4, 78);
+#endif
+}
+
 void drawStatus() {
   if (compact()) {
     drawStatusCompact();
     return;
   }
   const int w = canvas.width();
+  const int h = canvas.height();
   canvas.fillScreen(TFT_BLACK);
   canvas.setFont(&fonts::Font2);
-
-  // Header
-  canvas.setTextColor(TFT_ORANGE, TFT_BLACK);
-  canvas.drawString("BLUEJAY", 4, 2);
-#ifdef BJ_TEST_SERIAL
-  canvas.setTextColor(TFT_YELLOW, TFT_BLACK);
-  canvas.drawString(String("TEST P0:") + (testP0 ? "on" : "off"), 80, 2);
-#endif
-#if BJ_HAS_BATTERY
-  canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  int batt = M5.Power.getBatteryLevel();
-  canvas.setTextDatum(top_right);
-  canvas.drawString(String(batt) + "%" + (M5.Power.isCharging() ? "+" : ""), w - 4, 2);
   canvas.setTextDatum(top_left);
-#endif
-  canvas.drawFastHLine(0, 20, w, TFT_DARKGREY);
 
-  // GPS state
-  int y = 24;
-  if (!gps.linkUp()) {
-    canvas.setTextColor(TFT_YELLOW, TFT_BLACK);
-    canvas.drawString("GPS unit: searching...", 4, y);
-    canvas.setTextColor(TFT_DARKGREY, TFT_BLACK);
-#if BJ_HAS_KEYBOARD
-    canvas.drawString("check GPS cap or Grove cable", 4, y + 18);
-#else
-    canvas.drawString("check Grove cable", 4, y + 18);
-#endif
-  } else if (!gps.hasFix()) {
-    canvas.setTextColor(TFT_RED, TFT_BLACK);
-    canvas.drawString("NO FIX", 4, y);
-    canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    canvas.drawString(String(gps.satellitesInView()) + " in view  best " +
-                          String(gps.bestSignalDb()) + " dB",
-                      4, y + 18);
-  } else {
-    canvas.setTextColor(TFT_GREEN, TFT_BLACK);
-    canvas.drawString("FIX  " + String(gps.satellites()) + " sats  HDOP " +
-                          String(gps.hdop(), 1),
-                      4, y);
-    canvas.setTextColor(TFT_WHITE, TFT_BLACK);
-    char buf[40];
-    snprintf(buf, sizeof(buf), "%.6f, %.6f", gps.lat(), gps.lon());
-    canvas.drawString(buf, 4, y + 18);
-  }
-
-  // Log state. The Wi-Fi footer needs a third line, so everything moves up.
-  const bool wifiOn = WebExport::active();
-  y = wifiOn ? 62 : 66;
-  canvas.setTextColor(TFT_WHITE, TFT_BLACK);
-  if (!storageOk) {
-    canvas.setTextColor(TFT_RED, TFT_BLACK);
-    canvas.drawString("STORAGE ERROR", 4, y);
-  } else {
-    canvas.drawString("Logged: " + String(store.count()), 4, y);
-    Sighting last;
-    if (store.last(last)) {
-      canvas.setTextColor(TFT_DARKGREY, TFT_BLACK);
-      canvas.drawString(String("last ") + (last.utc + 11), 110, y);
-    }
-  }
-
-  // Footer
-  canvas.drawFastHLine(0, wifiOn ? 80 : 88, w, TFT_DARKGREY);
-  y = wifiOn ? 83 : 92;
-  if (wifiOn) {
-    canvas.setTextColor(TFT_CYAN, TFT_BLACK);
-    canvas.drawString(String("AP ") + WebExport::ssid() + "  " + WebExport::ip(), 4, y);
-    canvas.drawString(String("pw ") + ApPassword::get(), 4, y + 17);
-    canvas.setTextColor(TFT_YELLOW, TFT_BLACK);
-#if BJ_HAS_KEYBOARD
-    canvas.drawString("[Esc] menu: wifi off", 4, y + 34);
-#elif BJ_HAS_BTN_B
-    canvas.drawString("[B] hold 3s: wifi off", 4, y + 34);
-#else
-    canvas.drawString("hold: wifi off", 4, y + 34);
-#endif
-  } else {
-    canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-#if BJ_HAS_KEYBOARD
-    canvas.drawString("[Enter] log sighting", 4, y);
-    canvas.drawString("[Esc] menu", 4, y + 18);
-#elif BJ_HAS_BTN_B
-    canvas.drawString("[A] log sighting", 4, y);
-    canvas.drawString("[B] hold 3s: wifi export", 4, y + 18);
-#else
-    canvas.drawString("tap: log sighting", 4, y);
-    canvas.drawString("hold: wifi export", 4, y + 18);
-#endif
-  }
+  drawTopBar(w);
+  if (WebExport::active()) drawWifiHome(w, h);
+  else drawHome(w);
+  drawBottomBar(w, h);
 }
 
 void draw() {
@@ -485,6 +547,36 @@ void bjTestCommand(const String& command) {
     File f = LittleFS.open(BJ_LOG_PATH, "w");
     f.print("id,utc,lat,lon,alt_m,hdop,sats\r\n1,2026-01-01T00:00:01Z,1.5000000,2.5000000,nan,0.90,8\n");
     f.close();
+  } else if (command.startsWith("gpsstate ")) {
+    testGpsState = command.substring(9).toInt();
+    lastDrawMs = 0;
+  } else if (command.startsWith("wifi")) {
+    toggleWifi();
+  } else if (command == "screen") {
+    // Current screen as run-length encoded RGB565, one line per row.
+    draw();
+    Serial.println("-----BEGIN SCREEN-----");
+    Serial.flush();
+    for (int y = 0; y < canvas.height(); y++) {
+      String row;
+      int run = 0;
+      uint16_t color = 0;
+      for (int x = 0; x < canvas.width(); x++) {
+        const uint16_t c = canvas.readPixel(x, y);
+        if (run && c == color) {
+          run++;
+          continue;
+        }
+        if (run) row += String(run) + ":" + String(color, HEX) + " ";
+        color = c;
+        run = 1;
+      }
+      row += String(run) + ":" + String(color, HEX);
+      Serial.println(String(y) + "|" + row);
+      Serial.flush();
+      delay(3);
+    }
+    Serial.println("-----END SCREEN-----");
   } else if (command == "p0") {
     setTestP0(!testP0);
   } else if (command == "gpslog") {
@@ -534,6 +626,7 @@ void setup() {
   M5.Display.setRotation(1);  // landscape 240x135
 #endif
   canvas.setColorDepth(16);
+  canvas.setSwapBytes(true);  // the bird sprites are plain RGB565
   canvas.createSprite(M5.Display.width(), M5.Display.height());
 #if BJ_HAS_SPEAKER
   M5.Speaker.setVolume(Settings::volume());
