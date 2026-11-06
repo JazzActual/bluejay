@@ -22,6 +22,7 @@ Controller (pick one):
 
 GPS (both use the AT6668 chip and send NMEA at 115200 baud):
 - [Unit GPS v1.1](https://docs.m5stack.com/en/unit/Unit-GPS%20v1.1). Plugs into the controller's Grove port. Works with any controller.
+- [Cap LoRa-1262](https://docs.m5stack.com/en/cap/Cap_LoRa-1262) (ATGM336H). Plugs into the Cardputer ADV's EXT header and talks to it on G15 (RX) and G13 (TX). Keep its LoRa antenna attached.
 - [Atomic GPS Base v2.0](https://docs.m5stack.com/en/atom/Atomic_GPS_Base_v2.0) (ATGM336H). The AtomS3R stacks on top and talks to it on G5 (RX) and G6 (TX). AtomS3R only. It has a built-in antenna, so it needs a view of the sky.
 
 On the AtomS3R the firmware checks for the Atomic GPS Base first and then falls back to the Grove port, so the same firmware works with either GPS.

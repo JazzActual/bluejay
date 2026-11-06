@@ -275,7 +275,11 @@ void drawStatus() {
     canvas.setTextColor(TFT_YELLOW, TFT_BLACK);
     canvas.drawString("GPS unit: searching...", 4, y);
     canvas.setTextColor(TFT_DARKGREY, TFT_BLACK);
+#if BJ_HAS_KEYBOARD
+    canvas.drawString("check GPS cap or Grove cable", 4, y + 18);
+#else
     canvas.drawString("check Grove cable", 4, y + 18);
+#endif
   } else if (!gps.hasFix()) {
     canvas.setTextColor(TFT_RED, TFT_BLACK);
     canvas.drawString("NO FIX", 4, y);

@@ -31,6 +31,10 @@
   #define BJ_BOARD_NAME "Cardputer ADV"
   #define BJ_GPS_RX_PIN 1       // Grove white  (ESP32 RX <- GPS TX)
   #define BJ_GPS_TX_PIN 2       // Grove yellow (ESP32 TX -> GPS RX)
+  // Cap LoRa-1262 (ATGM336H / AT6668) on the EXT header. Fixed wiring, 115200
+  // baud. Probed first; the Grove Unit GPS is the fallback.
+  #define BJ_GPS_BASE_RX_PIN 15 // ESP32 RX <- cap GPS TX
+  #define BJ_GPS_BASE_TX_PIN 13 // ESP32 TX -> cap GPS RX
   #define BJ_HAS_BATTERY 1
   #define BJ_HAS_SPEAKER 1
   #define BJ_HAS_BTN_B 0
