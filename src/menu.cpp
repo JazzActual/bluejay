@@ -210,7 +210,7 @@ void drawBrowse(M5Canvas& c) {
   c.setTextDatum(top_left);
 
   c.setTextColor(TFT_WHITE, TFT_BLACK);
-  c.drawString("#" + String(s.id) + "  " + (s.type[0] ? sightingTypeLabel(s.type) : "No tag"), 4, 22);
+  c.drawString("#" + String(s.id) + "  " + sightingTypeLabel(s.type), 4, 22);
   c.drawString(s.utc, 4, 39);
   char coords[40];
   snprintf(coords, sizeof(coords), "%.6f, %.6f", s.lat, s.lon);

@@ -139,6 +139,7 @@ void logSighting() {
 }
 
 void saveSighting(Sighting& s) {
+  if (!s.type[0]) strlcpy(s.type, kDefaultSightingType, sizeof(s.type));
   if (!store.append(s)) {
     showFlash(Flash::Error);
     beep(300, 400);
