@@ -11,7 +11,7 @@
   #define BJ_GPS_TX_PIN 9       // Grove yellow (ESP32 TX -> GPS RX)
   #define BJ_HAS_BATTERY 1
   #define BJ_HAS_SPEAKER 1
-  #define BJ_HAS_BTN_B 1        // side button toggles Wi-Fi
+  #define BJ_HAS_BTN_B 1        // side button opens and steps through the menu
   #define BJ_HAS_KEYBOARD 0
   #define BJ_GROVE_5V_SWITCHED 1  // Grove 5V must be switched to output
 #elif defined(BJ_BOARD_ATOMS3R)
@@ -44,9 +44,10 @@
   #error "No board selected: build with -e m5stack-sticks3, -e m5stack-atoms3r, or -e m5stack-cardputer-adv"
 #endif
 
-// Hold this long to toggle the Wi-Fi export AP.
-#define BJ_HOLD_WIFI_MS 1500        // single-button boards
-#define BJ_BTN_B_HOLD_WIFI_MS 3000  // boards with Button B
+#define BJ_HAS_MENU (BJ_HAS_KEYBOARD || BJ_HAS_BTN_B)
+
+#define BJ_HOLD_WIFI_MS 1500       // single-button boards: hold to toggle Wi-Fi
+#define BJ_BTN_B_HOLD_BACK_MS 1000 // boards with Button B: hold to go back in the menu
 
 // ---- GPS unit (Unit GPS v1.1, AT6668) ----
 #define BJ_GPS_BAUD 115200      // AT6668 factory default

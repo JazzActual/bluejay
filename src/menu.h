@@ -1,7 +1,7 @@
 #pragma once
 #include "config.h"
 
-#if BJ_HAS_KEYBOARD
+#if BJ_HAS_MENU
 #include <M5Unified.h>
 #include "gps_link.h"
 #include "log_store.h"
@@ -10,10 +10,11 @@ struct Key {
   bool enter = false;
   bool esc = false;
   bool del = false;
+  bool next = false;  // Button B: step forward, wrapping around
   char ch = 0;  // printable character, or 0
 };
 
-// Esc menu on boards with a keyboard.
+// Opened with Esc on the Cardputer and Button B on the StickS3.
 namespace Menu {
 struct Host {
   LogStore* store;

@@ -2,7 +2,7 @@
 // Runs on M5StickS3, AtomS3R, or Cardputer ADV (see platformio.ini / config.h).
 //
 // StickS3: Button A (front) logs a sighting. Button B (side) turns the screen
-// on, and holding it for 3 s toggles Wi-Fi.
+// on, or opens the menu if it's already on.
 // AtomS3R: tap the screen button to log, hold it to toggle Wi-Fi.
 // Cardputer ADV: Enter logs and a letter key tags it. Esc opens the menu.
 // USB serial: type "help" for dump/export commands.
@@ -11,6 +11,8 @@
 #include "config.h"
 #if BJ_HAS_KEYBOARD
 #include <M5Cardputer.h>
+#endif
+#if BJ_HAS_MENU
 #include "menu.h"
 #endif
 #include "ap_password.h"
@@ -77,9 +79,9 @@ void wakeScreen() {
 // radio is draining the battery.
 void updateScreenTimeout() {
   const bool idle = millis() - lastActivityMs >= BJ_SCREEN_TIMEOUT_MS;
-#if BJ_HAS_KEYBOARD
+#if BJ_HAS_MENU
   // Closes even if Wi-Fi keeps the screen on, so an idle device can't act on a
-  // stray Enter inside the menu.
+  // stray press inside the menu.
   if (idle && Menu::active()) {
     Menu::close();
     lastDrawMs = 0;
@@ -387,8 +389,8 @@ void drawHome(int w) {
 #elif BJ_HAS_BTN_B
   canvas.drawString("[A]", 4, 34);
   canvas.drawString("log", 4, 52);
-  canvas.drawString("[B] hold", rightX, 34);
-  canvas.drawString("3s: wifi", rightX, 52);
+  canvas.drawString("[B]", rightX, 34);
+  canvas.drawString("menu", rightX, 52);
 #else
   canvas.drawString("tap", 4, 34);
   canvas.drawString("log", 4, 52);
@@ -410,7 +412,7 @@ void drawWifiHome(int w, int h) {
   canvas.drawString("[Esc] menu:", 4, 78);
   canvas.drawString("wifi off", 4, 96);
 #elif BJ_HAS_BTN_B
-  canvas.drawString("[B] hold 3s:", 4, 78);
+  canvas.drawString("[B] menu:", 4, 78);
   canvas.drawString("wifi off", 4, 96);
 #else
   canvas.drawString("hold: wifi off", 4, 78);
@@ -436,7 +438,7 @@ void drawStatus() {
 
 void draw() {
   if (flash != Flash::None && millis() > flashUntilMs) flash = Flash::None;
-#if BJ_HAS_KEYBOARD
+#if BJ_HAS_MENU
   if (Menu::active()) {
     Menu::draw(canvas);
     canvas.pushSprite(0, 0);
@@ -509,6 +511,45 @@ void pollKeyboard() {
   handleKey(key);
 }
 #endif
+
+#if BJ_HAS_BTN_B
+// With the menu closed, A logs even with the screen off, so a sighting is never
+// lost to a press that only wakes it.
+void pressA() {
+  wakeScreen();
+  lastDrawMs = 0;
+  if (!Menu::active()) {
+    logSighting();
+    return;
+  }
+  Key key;
+  key.enter = true;
+  Menu::handleKey(key);
+}
+
+void clickB() {
+  wakeScreen();
+  lastDrawMs = 0;
+  if (!Menu::active()) {
+    flash = Flash::None;
+    Menu::open();
+    return;
+  }
+  Key key;
+  key.next = true;
+  Menu::handleKey(key);
+}
+
+// Only goes back, so it does nothing on the home screen.
+void holdB() {
+  wakeScreen();
+  if (!Menu::active()) return;
+  lastDrawMs = 0;
+  Key key;
+  key.esc = true;
+  Menu::handleKey(key);
+}
+#endif
 }  // namespace
 
 #ifdef BJ_TEST_SERIAL
@@ -536,6 +577,14 @@ void bjTestCommand(const String& command) {
     else if (name == "del") key.del = true;
     else key.ch = name[0];
     handleKey(key);
+#endif
+#if BJ_HAS_BTN_B
+  } else if (command == "btn a") {
+    pressA();
+  } else if (command == "btn b") {
+    clickB();
+  } else if (command == "btn hold") {
+    holdB();
 #endif
   } else if (command == "idle") {
     lastActivityMs = millis() - BJ_SCREEN_TIMEOUT_MS;
@@ -595,7 +644,7 @@ void bjTestCommand(const String& command) {
   } else if (command == "reboot") {
     ESP.restart();
   }
-#if BJ_HAS_KEYBOARD
+#if BJ_HAS_MENU
   Serial.printf("state menu=%s flash=%d screen=%d wifi=%d count=%lu\n",
                 Menu::screenName(), (int)flash, screenOn, WebExport::active(),
                 (unsigned long)store.count());
@@ -632,7 +681,7 @@ void setup() {
   M5.Speaker.setVolume(Settings::volume());
 #endif
 #if BJ_HAS_BTN_B
-  M5.BtnB.setHoldThresh(BJ_BTN_B_HOLD_WIFI_MS);
+  M5.BtnB.setHoldThresh(BJ_BTN_B_HOLD_BACK_MS);
 #else
   M5.BtnA.setHoldThresh(BJ_HOLD_WIFI_MS);
 #endif
@@ -640,7 +689,7 @@ void setup() {
   storageOk = store.begin();
   ApPassword::begin();
   gps.begin();
-#if BJ_HAS_KEYBOARD
+#if BJ_HAS_MENU
   Menu::begin({&store, &gps, &storageOk, toggleWifi, beep});
 #endif
   lastActivityMs = millis();
@@ -660,20 +709,25 @@ void loop() {
 #if BJ_HAS_KEYBOARD
   pollKeyboard();
 #else
-  // wasClicked() only fires on a release before the hold threshold, so a
-  // long hold toggles Wi-Fi without also logging a sighting. Logging works with
-  // the screen off, so a sighting is never lost to a press that only wakes it.
+#if BJ_HAS_BTN_B
+  if (M5.BtnA.wasClicked()) pressA();
+  // The press that turns the screen on does nothing else when it's released.
+  static bool wokeOnThisPress = false;
+  if (M5.BtnB.wasPressed()) {
+    wokeOnThisPress = !screenOn;
+    wakeScreen();
+  }
+  // wasClicked() only fires on a release before the hold threshold.
+  if (M5.BtnB.wasClicked() && !wokeOnThisPress) clickB();
+  if (M5.BtnB.wasHold() && !wokeOnThisPress) holdB();
+#else
+  // wasClicked() only fires on a release before the hold threshold, so a long
+  // hold toggles Wi-Fi without also logging a sighting. Logging works with the
+  // screen off, so a sighting is never lost to a press that only wakes it.
   if (M5.BtnA.wasClicked()) {
     wakeScreen();
     logSighting();
   }
-#if BJ_HAS_BTN_B
-  if (M5.BtnB.wasPressed()) wakeScreen();
-  if (M5.BtnB.wasHold()) {
-    wakeScreen();
-    toggleWifi();
-  }
-#else
   if (M5.BtnA.wasHold()) {
     wakeScreen();
     toggleWifi();

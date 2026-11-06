@@ -1,11 +1,20 @@
 #include "menu.h"
 
-#if BJ_HAS_KEYBOARD
+#if BJ_HAS_MENU
 #include "ap_password.h"
 #include "settings.h"
 #include "web_export.h"
 
+// Hints for both control schemes: keyboard, then buttons.
+#if BJ_HAS_KEYBOARD
+#define HINT(keys, buttons) keys
+#else
+#define HINT(keys, buttons) buttons
+#endif
+
 namespace {
+constexpr bool kButtonsOnly = !BJ_HAS_KEYBOARD;
+
 enum class Screen {
   Closed,
   List,
@@ -21,6 +30,7 @@ enum class Screen {
   Message,
 };
 
+#if BJ_HAS_KEYBOARD
 const char* const kItems[] = {
     "Wi-Fi export",      "Change password", "New random password",
     "Sightings",         "Delete last sighting", "Clear log",
@@ -31,8 +41,21 @@ const Screen kItemScreens[] = {
     Screen::Browse,     Screen::ConfirmDelete, Screen::Clear,
     Screen::Gps,        Screen::Brightness,    Screen::Volume,
 };
-const int kNumItems = sizeof(kItems) / sizeof(kItems[0]);
 const int kVisibleRows = 6;
+#else
+// Changing the password and clearing the log need typing, so they're on the
+// web page only.
+const char* const kItems[] = {
+    "Wi-Fi export",      "New random password", "Sightings", "Delete last sighting",
+    "GPS status",        "Screen brightness",   "Speaker volume",
+};
+const Screen kItemScreens[] = {
+    Screen::Wifi,       Screen::ConfirmRandom, Screen::Browse, Screen::ConfirmDelete,
+    Screen::Gps,        Screen::Brightness,    Screen::Volume,
+};
+const int kVisibleRows = 5;  // leaves room for the hint
+#endif
+const int kNumItems = sizeof(kItems) / sizeof(kItems[0]);
 
 // Brightness stops above zero so the screen can't be set to invisible.
 const uint8_t kBrightnessLevels[] = {20, 50, 80, 140, 255};
@@ -79,19 +102,23 @@ void moveSelection(int delta) {
   if (selected >= scrollTop + kVisibleRows) scrollTop = selected - kVisibleRows + 1;
 }
 
+// One button can only go forward, so it wraps around instead of stopping.
+int stepLevel(const uint8_t* levels, uint8_t value, int delta) {
+  const int level = nearestLevel(levels, value) + delta;
+  return kButtonsOnly ? (level + kNumLevels) % kNumLevels : constrain(level, 0, kNumLevels - 1);
+}
+
 void adjustBrightness(int delta) {
-  const int level = constrain(
-      nearestLevel(kBrightnessLevels, Settings::brightness()) + delta, 0, kNumLevels - 1);
+  const int level = stepLevel(kBrightnessLevels, Settings::brightness(), delta);
   Settings::setBrightness(kBrightnessLevels[level]);
   M5.Display.setBrightness(Settings::brightness());
 }
 
 void adjustVolume(int delta) {
-  const int level = constrain(
-      nearestLevel(kVolumeLevels, Settings::volume()) + delta, 0, kNumLevels - 1);
+  const int level = stepLevel(kVolumeLevels, Settings::volume(), delta);
   Settings::setVolume(kVolumeLevels[level]);
   M5.Speaker.setVolume(Settings::volume());
-  host.beep(880, 120);
+  host.beep(BJ_BEEP_HZ, BJ_NO_FIX_BEEP_MS);  // previews the real beep
 }
 
 void typeInto(const Key& key, size_t maxLength) {
@@ -157,6 +184,7 @@ void drawList(M5Canvas& c) {
     c.setTextColor(TFT_WHITE, isSelected ? TFT_NAVY : TFT_BLACK);
     c.drawString(kItems[item], 6, y + 1);
   }
+  if (kButtonsOnly) footer(c, "[A] open  [B] next  hold [B] exit");
 }
 
 void drawWifi(M5Canvas& c) {
@@ -168,11 +196,11 @@ void drawWifi(M5Canvas& c) {
     c.drawString(WebExport::ssid(), 4, 42);
     c.drawString(String("pw ") + ApPassword::get(), 4, 60);
     c.drawString(WebExport::ip(), 4, 78);
-    footer(c, "[Enter] turn off  [Esc] back");
+    footer(c, HINT("[Enter] turn off  [Esc] back", "[A] turn off  hold [B] back"));
   } else {
     c.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     c.drawString("Off", 4, 24);
-    footer(c, "[Enter] turn on  [Esc] back");
+    footer(c, HINT("[Enter] turn on  [Esc] back", "[A] turn on  hold [B] back"));
   }
 }
 
@@ -201,7 +229,7 @@ void drawBrowse(M5Canvas& c) {
   if (!host.store->fromEnd(browseIndex, s)) {
     c.setTextColor(TFT_RED, TFT_BLACK);
     c.drawString("Couldn't read this sighting", 4, 28);
-    footer(c, "[Esc] back");
+    footer(c, HINT("[Esc] back", "[A] back"));
     return;
   }
   c.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
@@ -219,7 +247,7 @@ void drawBrowse(M5Canvas& c) {
   String detail = isnan(s.alt_m) ? String("alt n/a") : String(s.alt_m, 0) + " m";
   detail += "  HDOP " + String(s.hdop, 1) + "  " + String(s.sats) + " sats";
   c.drawString(detail, 4, 73);
-  footer(c, "[;] newer  [.] older  [Esc] back");
+  footer(c, HINT("[;] newer  [.] older  [Esc] back", "[B] older  [A] back"));
 }
 
 void drawGps(M5Canvas& c) {
@@ -241,7 +269,7 @@ void drawGps(M5Canvas& c) {
   c.drawString(String("Battery: ") + M5.Power.getBatteryLevel() + "%" +
                    (gps.antennaOpen() ? "  ant: open" : ""),
                4, 90);
-  footer(c, "[Esc] back");
+  footer(c, HINT("[Esc] back", "[A] back"));
 }
 
 void drawLevel(M5Canvas& c, const char* title, const uint8_t* levels, uint8_t value, bool hasOff) {
@@ -258,7 +286,7 @@ void drawLevel(M5Canvas& c, const char* title, const uint8_t* levels, uint8_t va
     c.setTextColor(TFT_YELLOW, TFT_BLACK);
     c.drawString("Muted", 4, 76);
   }
-  footer(c, "[,] less  [/] more  [Esc] back");
+  footer(c, HINT("[,] less  [/] more  [Esc] back", "[B] change  [A] done"));
 }
 
 void drawMessage(M5Canvas& c) {
@@ -280,7 +308,7 @@ void drawMessage(M5Canvas& c) {
   } else {
     c.drawString(message, 4, 44);
   }
-  footer(c, "Press any key");
+  footer(c, HINT("Press any key", "Press a button"));
 }
 }  // namespace
 
@@ -306,7 +334,7 @@ void handleKey(const Key& key) {
     if (key.esc) close();
     else if (key.enter) enterItem();
     else if (key.ch == ';') moveSelection(-1);
-    else if (key.ch == '.') moveSelection(1);
+    else if (key.ch == '.' || key.next) moveSelection(1);
     return;
   }
   if (screen == Screen::Message) {
@@ -315,6 +343,13 @@ void handleKey(const Key& key) {
   }
   if (key.esc) {
     typed = "";
+    screen = Screen::List;
+    return;
+  }
+  // A also backs out of screens where it has nothing to confirm.
+  if (kButtonsOnly && key.enter &&
+      (screen == Screen::Browse || screen == Screen::Gps || screen == Screen::Brightness ||
+       screen == Screen::Volume)) {
     screen = Screen::List;
     return;
   }
@@ -333,6 +368,7 @@ void handleKey(const Key& key) {
     case Screen::Browse:
       if (key.ch == ';' && browseIndex > 0) browseIndex--;
       else if (key.ch == '.' && browseIndex + 1 < host.store->count()) browseIndex++;
+      else if (key.next && host.store->count()) browseIndex = (browseIndex + 1) % host.store->count();
       break;
     case Screen::ConfirmDelete:
       if (key.enter) submitDelete();
@@ -343,11 +379,11 @@ void handleKey(const Key& key) {
       break;
     case Screen::Brightness:
       if (key.ch == ',') adjustBrightness(-1);
-      else if (key.ch == '/') adjustBrightness(1);
+      else if (key.ch == '/' || key.next) adjustBrightness(1);
       break;
     case Screen::Volume:
       if (key.ch == ',') adjustVolume(-1);
-      else if (key.ch == '/') adjustVolume(1);
+      else if (key.ch == '/' || key.next) adjustVolume(1);
       break;
     default:
       break;
@@ -365,13 +401,14 @@ void draw(M5Canvas& c) {
       break;
     case Screen::ConfirmRandom:
       drawConfirm(c, "NEW RANDOM PASSWORD", "Replace the Wi-Fi password?",
-                  "You'll need to reconnect.", "[Enter] replace  [Esc] back");
+                  "You'll need to reconnect.",
+                  HINT("[Enter] replace  [Esc] back", "[A] replace  hold [B] back"));
       break;
     case Screen::Browse: drawBrowse(c); break;
     case Screen::ConfirmDelete:
       host.store->last(last);
       drawConfirm(c, "DELETE LAST SIGHTING", "Delete #" + String(last.id) + "?", last.utc,
-                  "[Enter] delete  [Esc] keep");
+                  HINT("[Enter] delete  [Esc] keep", "[A] delete  hold [B] keep"));
       break;
     case Screen::Clear:
       drawTyping(c, "CLEAR LOG", ("Type DELETE to erase " + String(host.store->count()) +
