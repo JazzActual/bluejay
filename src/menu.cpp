@@ -235,7 +235,12 @@ void drawGps(M5Canvas& c) {
     snprintf(coords, sizeof(coords), "%.6f, %.6f", gps.lat(), gps.lon());
     c.drawString(coords, 4, 56);
   }
-  c.drawString("Battery: " + String(M5.Power.getBatteryLevel()) + "%", 4, 73);
+  c.drawString("In view: " + String(gps.satellitesInView()) + "  best " +
+                   String(gps.bestSignalDb()) + " dB",
+               4, 73);
+  c.drawString(String("Battery: ") + M5.Power.getBatteryLevel() + "%" +
+                   (gps.antennaOpen() ? "  ant: open" : ""),
+               4, 90);
   footer(c, "[Esc] back");
 }
 

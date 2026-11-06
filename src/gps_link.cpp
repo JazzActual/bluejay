@@ -20,6 +20,10 @@ constexpr uint8_t kNumProbes = sizeof(kProbes) / sizeof(kProbes[0]);
 HardwareSerial& gpsSerial = Serial1;
 }  // namespace
 
+#ifdef BJ_TEST_SERIAL
+bool bjEchoNmea = false;  // test builds only: copies raw GPS output to serial
+#endif
+
 void GpsLink::begin() { applyProbe(0); }
 
 void GpsLink::applyProbe(uint8_t idx) {
@@ -35,7 +39,18 @@ void GpsLink::applyProbe(uint8_t idx) {
 
 void GpsLink::poll() {
   while (gpsSerial.available()) {
-    _gps.encode(gpsSerial.read());
+    const char c = gpsSerial.read();
+#ifdef BJ_TEST_SERIAL
+    if (bjEchoNmea) Serial.write(c);
+#endif
+    _gps.encode(c);
+    if (c == '\n') {
+      _line[_lineLen] = '\0';
+      parseStatusLine();
+      _lineLen = 0;
+    } else if (_lineLen < sizeof(_line) - 1) {
+      _line[_lineLen++] = c;
+    }
   }
 
   uint32_t now = millis();
@@ -86,6 +101,58 @@ bool GpsLink::snapshot(Sighting& out) {
   out.hdop = hdop();
   out.sats = satellites();
   return true;
+}
+
+uint32_t GpsLink::satellitesInView() const {
+  uint32_t total = 0;
+  for (int i = 0; i < kNumTalkers; i++) total += _inView[i];
+  return total;
+}
+
+// TinyGPS++ doesn't expose these: satellites in view and signal strength from
+// GSV, and antenna status from TXT. Sentences look like
+// $GPGSV,msgs,msg,inView,id,elevation,azimuth,snr,...*checksum
+void GpsLink::parseStatusLine() {
+  if (_lineLen < 7 || _line[0] != '$') return;
+  const char* type = _line + 3;
+
+  if (strncmp(type, "RMC", 3) == 0) {  // first sentence of each update
+    _bestSignalDb = _signalThisCycleDb;
+    _signalThisCycleDb = 0;
+    return;
+  }
+  if (strncmp(type, "TXT", 3) == 0) {
+    if (strstr(_line, "ANTENNA OPEN")) _antennaOpen = true;
+    else if (strstr(_line, "ANTENNA OK")) _antennaOpen = false;
+    return;
+  }
+  if (strncmp(type, "GSV", 3) != 0) return;
+
+  static const char kTalkers[] = "PLABQN";  // GP, GL, GA, BD/GB, GQ, GN
+  char talker = _line[2];
+  if (_line[1] == 'B') talker = 'B';
+  const char* found = strchr(kTalkers, talker);
+  if (!found) return;
+  const int slot = found - kTalkers;
+
+  // Walks the comma-separated fields, which can be empty.
+  int field = 0;
+  const char* start = _line;
+  for (const char* p = _line;; p++) {
+    if (*p == ',' || *p == '*' || *p == '\0') {
+      if (p > start) {
+        const int value = atoi(start);
+        if (field == 3) _inView[slot] = value;
+        // SNR is the last of each four-field satellite block, from field 7.
+        else if (field >= 7 && (field - 7) % 4 == 0 && value > _signalThisCycleDb) {
+          _signalThisCycleDb = value;
+        }
+      }
+      if (*p != ',') break;
+      field++;
+      start = p + 1;
+    }
+  }
 }
 
 int GpsLink::rxPin() const { return kProbes[_probe].rx; }

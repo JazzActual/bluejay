@@ -39,6 +39,26 @@ uint32_t flashUntilMs = 0;
 uint32_t lastDrawMs = 0;
 bool screenOn = true;
 uint32_t lastActivityMs = 0;
+#ifdef BJ_TEST_SERIAL
+bool testP0 = false;
+
+// Test builds only: drives P0 of the Cap LoRa-1262's PI4IOE expander, which
+// M5Stack documents as the LoRa RF switch.
+void setTestP0(bool on) {
+  const uint8_t addr = 0x43;
+  const uint32_t freq = 400000;
+  uint8_t direction = M5.In_I2C.readRegister8(addr, 0x03, freq) | 0x01;
+  uint8_t highZ = M5.In_I2C.readRegister8(addr, 0x07, freq) & ~0x01;
+  uint8_t output = M5.In_I2C.readRegister8(addr, 0x05, freq);
+  output = on ? (output | 0x01) : (output & ~0x01);
+  M5.In_I2C.writeRegister8(addr, 0x05, output, freq);
+  M5.In_I2C.writeRegister8(addr, 0x03, direction, freq);
+  M5.In_I2C.writeRegister8(addr, 0x07, highZ, freq);
+  testP0 = on;
+  log_i("P0 %d, readback dir=%02x out=%02x", on, M5.In_I2C.readRegister8(addr, 0x03, freq),
+        M5.In_I2C.readRegister8(addr, 0x05, freq));
+}
+#endif
 
 // Counts as activity, so it also restarts the screen timeout.
 void wakeScreen() {
@@ -219,7 +239,7 @@ void drawStatusCompact() {
     canvas.setTextColor(TFT_RED, TFT_BLACK);
     canvas.drawString("NO FIX", 2, y);
     canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    canvas.drawString(String(gps.satellites()) + " sats", 2, y + 16);
+    canvas.drawString(String(gps.satellitesInView()) + " in view", 2, y + 16);
   } else {
     canvas.setTextColor(TFT_GREEN, TFT_BLACK);
     canvas.drawString("FIX " + String(gps.satellites()) + "sat H" +
@@ -260,6 +280,10 @@ void drawStatus() {
   // Header
   canvas.setTextColor(TFT_ORANGE, TFT_BLACK);
   canvas.drawString("BLUEJAY", 4, 2);
+#ifdef BJ_TEST_SERIAL
+  canvas.setTextColor(TFT_YELLOW, TFT_BLACK);
+  canvas.drawString(String("TEST P0:") + (testP0 ? "on" : "off"), 80, 2);
+#endif
 #if BJ_HAS_BATTERY
   canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   int batt = M5.Power.getBatteryLevel();
@@ -284,7 +308,9 @@ void drawStatus() {
     canvas.setTextColor(TFT_RED, TFT_BLACK);
     canvas.drawString("NO FIX", 4, y);
     canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    canvas.drawString(String(gps.satellites()) + " sats  (need sky view)", 4, y + 18);
+    canvas.drawString(String(gps.satellitesInView()) + " in view  best " +
+                          String(gps.bestSignalDb()) + " dB",
+                      4, y + 18);
   } else {
     canvas.setTextColor(TFT_GREEN, TFT_BLACK);
     canvas.drawString("FIX  " + String(gps.satellites()) + " sats  HDOP " +
@@ -381,6 +407,12 @@ void handleKey(const Key& key) {
     Menu::handleKey(key);
     return;
   }
+#ifdef BJ_TEST_SERIAL
+  if (key.ch == 'p') {
+    setTestP0(!testP0);
+    return;
+  }
+#endif
   if (flash == Flash::Logged && key.ch >= '1' && key.ch < '1' + kNumSightingTypes) {
     tagLast(key.ch - '0');
     return;
@@ -445,6 +477,21 @@ void bjTestCommand(const String& command) {
     File f = LittleFS.open(BJ_LOG_PATH, "w");
     f.print("id,utc,lat,lon,alt_m,hdop,sats\r\n1,2026-01-01T00:00:01Z,1.5000000,2.5000000,nan,0.90,8\n");
     f.close();
+  } else if (command == "p0") {
+    setTestP0(!testP0);
+  } else if (command == "gpslog") {
+    File f = LittleFS.open("/gpstest.csv", "r");
+    Serial.println("-----BEGIN GPSLOG-----");
+    if (f) {
+      while (f.available()) Serial.write(f.read());
+      f.close();
+    }
+    Serial.println("-----END GPSLOG-----");
+  } else if (command == "gpslogclear") {
+    LittleFS.remove("/gpstest.csv");
+  } else if (command == "nmea") {
+    extern bool bjEchoNmea;
+    bjEchoNmea = !bjEchoNmea;
   } else if (command == "reboot") {
     ESP.restart();
   }
@@ -534,6 +581,22 @@ void loop() {
 #endif
 
   updateScreenTimeout();
+
+#ifdef BJ_TEST_SERIAL
+  // No location in this log: just satellite counts, signal, and uptime.
+  static uint32_t lastGpsLogMs = 0;
+  if (millis() - lastGpsLogMs >= 30000) {
+    lastGpsLogMs = millis();
+    File f = LittleFS.open("/gpstest.csv", "a");
+    if (f) {
+      f.printf("%lu,link=%d,fix=%d,used=%lu,view=%lu,best=%d,ant_open=%d,p0=%d,batt=%d\n",
+               (unsigned long)(millis() / 1000), gps.linkUp(), gps.hasFix(),
+               (unsigned long)gps.satellites(), (unsigned long)gps.satellitesInView(),
+               gps.bestSignalDb(), gps.antennaOpen(), testP0, (int)M5.Power.getBatteryLevel());
+      f.close();
+    }
+  }
+#endif
 
   if (screenOn && millis() - lastDrawMs > 200) {
     lastDrawMs = millis();
