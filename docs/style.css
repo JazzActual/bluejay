@@ -58,8 +58,6 @@ body {
 
 code { font-size: 12px; }
 
-.privacy { margin: 0; font-size: 13px; color: var(--muted); }
-
 .message {
   margin: 0;
   padding: 10px 12px;
