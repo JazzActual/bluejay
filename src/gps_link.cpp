@@ -8,6 +8,9 @@ struct Probe {
   uint32_t baud;
 };
 const Probe kProbes[] = {
+#ifdef BJ_GPS_BASE_RX_PIN
+    {BJ_GPS_BASE_RX_PIN, BJ_GPS_BASE_TX_PIN, 115200},
+#endif
     {BJ_GPS_RX_PIN, BJ_GPS_TX_PIN, BJ_GPS_BAUD},
     {BJ_GPS_TX_PIN, BJ_GPS_RX_PIN, BJ_GPS_BAUD},
     {BJ_GPS_RX_PIN, BJ_GPS_TX_PIN, 9600},

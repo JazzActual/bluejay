@@ -1,2 +1,5 @@
 .pio/
 .vscode/
+CLAUDE*.md
+.claude/
+.DS_Store
