@@ -129,12 +129,12 @@ void logSighting() {
   Sighting s;
   if (!storageOk) {
     showFlash(Flash::Error);
-    beep(300, 400);
+    beep(BJ_BEEP_HZ, BJ_ERROR_BEEP_MS);
     return;
   }
   if (!gps.snapshot(s)) {
     showFlash(Flash::NoFix);
-    beep(400, 250);
+    beep(BJ_BEEP_HZ, BJ_NO_FIX_BEEP_MS);
     return;
   }
   saveSighting(s);
@@ -144,7 +144,7 @@ void saveSighting(Sighting& s) {
   if (!s.type[0]) strlcpy(s.type, kDefaultSightingType, sizeof(s.type));
   if (!store.append(s)) {
     showFlash(Flash::Error);
-    beep(300, 400);
+    beep(BJ_BEEP_HZ, BJ_ERROR_BEEP_MS);
     return;
   }
   Serial.printf("logged #%lu %s %.7f,%.7f\n", (unsigned long)s.id, s.utc,
@@ -461,7 +461,7 @@ bool tagLast(char keyChar) {
     showFlash(Flash::Tagged);
   } else {
     showFlash(Flash::Error);
-    beep(300, 400);
+    beep(BJ_BEEP_HZ, BJ_ERROR_BEEP_MS);
   }
   return true;
 }

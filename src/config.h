@@ -74,6 +74,9 @@
 
 // ---- Feedback ----
 #define BJ_SPEAKER_VOLUME 64    // 0-255. Keep well under ~75% on battery.
+#define BJ_BEEP_HZ 2000          // 400 Hz is nearly inaudible on the StickS3 speaker
+#define BJ_NO_FIX_BEEP_MS 300
+#define BJ_ERROR_BEEP_MS 600
 
 // ---- Power ----
 #define BJ_CPU_MHZ 80           // lowest speed Wi-Fi supports
