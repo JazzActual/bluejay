@@ -1,6 +1,7 @@
 #include "ap_password.h"
 #include <Arduino.h>
 #include <Preferences.h>
+#include <WiFi.h>
 #include <bootloader_random.h>
 #include <esp_random.h>
 #include "config.h"
@@ -16,15 +17,17 @@ static_assert(sizeof(kAlphabet) - 1 == 32, "alphabet must have 32 characters");
 
 char current[BJ_AP_PW_MAX_LEN + 1] = {0};
 
-void generate() {
-  // Wi-Fi is still off, so the RNG needs this as its entropy source.
-  bootloader_random_enable();
-  size_t n = strlcpy(current, BJ_AP_PW_PREFIX, sizeof(current));
+void generate(char* out, size_t size) {
+  // The RNG needs this entropy source unless the Wi-Fi radio is running, and
+  // it must not be enabled while the radio is on.
+  const bool radioOff = WiFi.getMode() == WIFI_OFF;
+  if (radioOff) bootloader_random_enable();
+  size_t n = strlcpy(out, BJ_AP_PW_PREFIX, size);
   for (int i = 0; i < BJ_AP_PW_RANDOM_CHARS; i++) {
-    current[n++] = kAlphabet[esp_random() & 31];
+    out[n++] = kAlphabet[esp_random() & 31];
   }
-  current[n] = '\0';
-  bootloader_random_disable();
+  out[n] = '\0';
+  if (radioOff) bootloader_random_disable();
 }
 }  // namespace
 
@@ -41,7 +44,7 @@ void begin() {
     }
   }
 
-  generate();
+  generate(current, sizeof(current));
   // If this fails the password still works, but changes on the next boot.
   if (!open || prefs.putString(kKey, current) == 0) {
     log_e("Could not save the Wi-Fi password");
@@ -59,6 +62,12 @@ bool isValid(const char* candidate) {
     if (candidate[i] < 0x21 || candidate[i] > 0x7E) return false;
   }
   return true;
+}
+
+bool regenerate() {
+  char fresh[BJ_AP_PW_MAX_LEN + 1];
+  generate(fresh, sizeof(fresh));
+  return set(fresh);
 }
 
 bool set(const char* candidate) {

@@ -9,4 +9,5 @@ void begin();  // call before Wi-Fi starts: generation uses the hardware RNG
 const char* get();
 bool isValid(const char* candidate);
 bool set(const char* candidate);  // false if invalid or not saved
+bool regenerate();  // replaces it with a new random one; false if not saved
 }  // namespace ApPassword

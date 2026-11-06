@@ -12,6 +12,7 @@
   #define BJ_HAS_BATTERY 1
   #define BJ_HAS_SPEAKER 1
   #define BJ_HAS_BTN_B 1        // side button toggles Wi-Fi
+  #define BJ_HAS_KEYBOARD 0
   #define BJ_GROVE_5V_SWITCHED 1  // Grove 5V must be switched to output
 #elif defined(BJ_BOARD_ATOMS3R)
   #define BJ_BOARD_NAME "AtomS3R"
@@ -24,6 +25,7 @@
   #define BJ_HAS_BATTERY 0      // USB-C powered only
   #define BJ_HAS_SPEAKER 0
   #define BJ_HAS_BTN_B 0        // single button: hold to toggle Wi-Fi
+  #define BJ_HAS_KEYBOARD 0
   #define BJ_GROVE_5V_SWITCHED 0  // Grove 5V comes straight from USB 5V
 #elif defined(BJ_BOARD_CARDPUTER_ADV)
   #define BJ_BOARD_NAME "Cardputer ADV"
@@ -31,7 +33,8 @@
   #define BJ_GPS_TX_PIN 2       // Grove yellow (ESP32 TX -> GPS RX)
   #define BJ_HAS_BATTERY 1
   #define BJ_HAS_SPEAKER 1
-  #define BJ_HAS_BTN_B 0        // G0 only: hold to toggle Wi-Fi
+  #define BJ_HAS_BTN_B 0
+  #define BJ_HAS_KEYBOARD 1     // Enter logs, Esc opens the menu; G0 is unused
   #define BJ_GROVE_5V_SWITCHED 0
 #else
   #error "No board selected: build with -e m5stack-sticks3, -e m5stack-atoms3r, or -e m5stack-cardputer-adv"
@@ -51,6 +54,9 @@
 
 // ---- Storage ----
 #define BJ_LOG_PATH "/sightings.csv"
+
+// Keyboard boards: time after logging to press a number key and tag the sighting.
+#define BJ_TAG_WINDOW_MS 5000
 
 // ---- Wi-Fi export access point ----
 // SSID becomes e.g. "bluejay-A1B2" (last bytes of the MAC).

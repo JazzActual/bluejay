@@ -76,6 +76,7 @@ double GpsLink::lon() { return _gps.location.lng(); }
 bool GpsLink::snapshot(Sighting& out) {
   if (!hasFix()) return false;
   out.id = 0;
+  out.type[0] = '\0';
   snprintf(out.utc, sizeof(out.utc), "%04u-%02u-%02uT%02u:%02u:%02uZ",
            _gps.date.year(), _gps.date.month(), _gps.date.day(),
            _gps.time.hour(), _gps.time.minute(), _gps.time.second());

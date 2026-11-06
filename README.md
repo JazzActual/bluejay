@@ -48,13 +48,13 @@ pio device monitor       # serial console, 115200
 | Button B (side) | | Turn the screen on |
 | Hold Button B for 3 s | Hold the screen for 1.5 s | Turn the Wi-Fi export AP on or off |
 
-On the Cardputer ADV, press G0 to log and hold it for 1.5 s for Wi-Fi.
+On the Cardputer ADV, Enter logs a sighting and Esc opens the menu. Press 1 (Flock), 2 (other ALPR), or 3 (unknown) within 5 s of logging to tag it. Keep the power switch OFF when connecting it to a computer.
 
 The AtomS3R has no speaker, so the green or red screen flash is the only confirmation.
 
 The screen turns off after 30 s unless Wi-Fi is on. The GPS keeps its fix and logging still works while it's off.
 
-Each sighting is appended to `/sightings.csv` on internal flash (LittleFS) with the columns `id,utc,lat,lon,alt_m,hdop,sats`.
+Each sighting is appended to `/sightings.csv` on internal flash (LittleFS) with the columns `id,utc,lat,lon,alt_m,hdop,sats,type`.
 
 ### Export over Wi-Fi
 Hold B for 3 s (or hold the AtomS3R button), join `bluejay-XXXX` using the password shown on screen, then open `http://192.168.4.1/` to download CSV or GeoJSON, change the password, or clear the log.

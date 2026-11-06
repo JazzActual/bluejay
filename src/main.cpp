@@ -1,18 +1,24 @@
 // bluejay — log ALPR / Flock camera sightings with GPS.
-// Runs on M5StickS3 or AtomS3R (see platformio.ini / config.h).
+// Runs on M5StickS3, AtomS3R, or Cardputer ADV (see platformio.ini / config.h).
 //
 // StickS3: Button A (front) logs a sighting. Button B (side) turns the screen
 // on, and holding it for 3 s toggles Wi-Fi.
 // AtomS3R: tap the screen button to log, hold it to toggle Wi-Fi.
-// Cardputer ADV: press G0 to log, hold it to toggle Wi-Fi.
+// Cardputer ADV: Enter logs and a number key tags it. Esc opens the menu.
 // USB serial: type "help" for dump/export commands.
 
 #include <M5Unified.h>
+#include "config.h"
+#if BJ_HAS_KEYBOARD
+#include <M5Cardputer.h>
+#include "menu.h"
+#endif
 #include "ap_password.h"
 #include "config.h"
 #include "gps_link.h"
 #include "log_store.h"
 #include "serial_console.h"
+#include "settings.h"
 #include "web_export.h"
 
 #if BJ_HAS_SPEAKER
@@ -27,7 +33,7 @@ LogStore store;
 M5Canvas canvas(&M5.Display);
 bool storageOk = false;
 
-enum class Flash { None, Logged, NoFix, Error };
+enum class Flash { None, Logged, Tagged, NoFix, Error };
 Flash flash = Flash::None;
 uint32_t flashUntilMs = 0;
 uint32_t lastDrawMs = 0;
@@ -39,7 +45,7 @@ void wakeScreen() {
   lastActivityMs = millis();
   if (screenOn) return;
   M5.Display.wakeup();
-  M5.Display.setBrightness(BJ_SCREEN_BRIGHTNESS);
+  M5.Display.setBrightness(Settings::brightness());
   screenOn = true;
   lastDrawMs = 0;  // force redraw
   log_i("Screen on");
@@ -48,8 +54,16 @@ void wakeScreen() {
 // Wi-Fi keeps the screen on: it shows the password and is a reminder that the
 // radio is draining the battery.
 void updateScreenTimeout() {
-  if (!screenOn || WebExport::active()) return;
-  if (millis() - lastActivityMs < BJ_SCREEN_TIMEOUT_MS) return;
+  const bool idle = millis() - lastActivityMs >= BJ_SCREEN_TIMEOUT_MS;
+#if BJ_HAS_KEYBOARD
+  // Closes even if Wi-Fi keeps the screen on, so an idle device can't act on a
+  // stray Enter inside the menu.
+  if (idle && Menu::active()) {
+    Menu::close();
+    lastDrawMs = 0;
+  }
+#endif
+  if (!idle || !screenOn || WebExport::active()) return;
   M5.Display.setBrightness(0);
   M5.Display.sleep();
   screenOn = false;
@@ -81,11 +95,13 @@ void toggleWifi() {
   lastDrawMs = 0;
 }
 
-void showFlash(Flash f) {
+void showFlash(Flash f, uint32_t durationMs = 900) {
   flash = f;
-  flashUntilMs = millis() + 900;
+  flashUntilMs = millis() + durationMs;
   lastDrawMs = 0;  // force redraw
 }
+
+void saveSighting(Sighting& s);
 
 void logSighting() {
   Sighting s;
@@ -99,6 +115,10 @@ void logSighting() {
     beep(400, 250);
     return;
   }
+  saveSighting(s);
+}
+
+void saveSighting(Sighting& s) {
   if (!store.append(s)) {
     showFlash(Flash::Error);
     beep(300, 400);
@@ -106,7 +126,11 @@ void logSighting() {
   }
   Serial.printf("logged #%lu %s %.7f,%.7f\n", (unsigned long)s.id, s.utc,
                 s.lat, s.lon);
+#if BJ_HAS_KEYBOARD
+  showFlash(Flash::Logged, BJ_TAG_WINDOW_MS);
+#else
   showFlash(Flash::Logged);
+#endif
   playCall();
 }
 
@@ -118,6 +142,10 @@ void drawFlash() {
   switch (flash) {
     case Flash::Logged:
       if (store.last(last)) snprintf(sub, sizeof(sub), "#%lu", (unsigned long)last.id);
+      break;
+    case Flash::Tagged:
+      title = "TAGGED";
+      if (store.last(last)) snprintf(sub, sizeof(sub), "%s", sightingTypeLabel(last.type));
       break;
     case Flash::NoFix:
       bg = TFT_RED;
@@ -138,6 +166,17 @@ void drawFlash() {
   canvas.drawString(title, canvas.width() / 2, canvas.height() / 2 - (small ? 10 : 14));
   canvas.setFont(small ? &fonts::FreeSans9pt7b : &fonts::FreeSans12pt7b);
   canvas.drawString(sub, canvas.width() / 2, canvas.height() / 2 + (small ? 18 : 24));
+#if BJ_HAS_KEYBOARD
+  if (flash == Flash::Logged) {
+    String tags;
+    for (int i = 0; i < kNumSightingTypes; i++) {
+      if (i) tags += "  ";
+      tags += String(i + 1) + " " + kSightingTypes[i].label;
+    }
+    canvas.setFont(&fonts::Font2);
+    canvas.drawString(tags, canvas.width() / 2, canvas.height() - 12);
+  }
+#endif
   canvas.setTextDatum(top_left);
 }
 
@@ -277,37 +316,154 @@ void drawStatus() {
     canvas.drawString(String("AP ") + WebExport::ssid() + "  " + WebExport::ip(), 4, y);
     canvas.drawString(String("pw ") + ApPassword::get(), 4, y + 17);
     canvas.setTextColor(TFT_YELLOW, TFT_BLACK);
-#if BJ_HAS_BTN_B
+#if BJ_HAS_KEYBOARD
+    canvas.drawString("[Esc] menu: wifi off", 4, y + 34);
+#elif BJ_HAS_BTN_B
     canvas.drawString("[B] hold 3s: wifi off", 4, y + 34);
 #else
-    canvas.drawString("[G0] hold: wifi off", 4, y + 34);
+    canvas.drawString("hold: wifi off", 4, y + 34);
 #endif
   } else {
     canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-#if BJ_HAS_BTN_B
+#if BJ_HAS_KEYBOARD
+    canvas.drawString("[Enter] log sighting", 4, y);
+    canvas.drawString("[Esc] menu", 4, y + 18);
+#elif BJ_HAS_BTN_B
     canvas.drawString("[A] log sighting", 4, y);
     canvas.drawString("[B] hold 3s: wifi export", 4, y + 18);
 #else
-    canvas.drawString("[G0] log sighting", 4, y);
-    canvas.drawString("[G0] hold: wifi export", 4, y + 18);
+    canvas.drawString("tap: log sighting", 4, y);
+    canvas.drawString("hold: wifi export", 4, y + 18);
 #endif
   }
 }
 
 void draw() {
   if (flash != Flash::None && millis() > flashUntilMs) flash = Flash::None;
+#if BJ_HAS_KEYBOARD
+  if (Menu::active()) {
+    Menu::draw(canvas);
+    canvas.pushSprite(0, 0);
+    return;
+  }
+#endif
   if (flash != Flash::None) drawFlash(); else drawStatus();
   canvas.pushSprite(0, 0);
 }
+
+#if BJ_HAS_KEYBOARD
+void tagLast(int number) {
+  const char* slug = kSightingTypes[number - 1].slug;
+  if (store.setLastType(slug)) {
+    Serial.printf("tagged %s\n", slug);
+    showFlash(Flash::Tagged);
+  } else {
+    showFlash(Flash::Error);
+    beep(300, 400);
+  }
+}
+
+void handleKey(const Key& key) {
+  const bool wasOn = screenOn;
+  wakeScreen();
+  lastDrawMs = 0;  // force redraw
+
+  // With the screen off, Enter logs and every other key only wakes it.
+  if (!wasOn) {
+    if (key.enter) logSighting();
+    return;
+  }
+  if (Menu::active()) {
+    Menu::handleKey(key);
+    return;
+  }
+  if (flash == Flash::Logged && key.ch >= '1' && key.ch < '1' + kNumSightingTypes) {
+    tagLast(key.ch - '0');
+    return;
+  }
+  if (key.enter) {
+    logSighting();
+  } else if (key.esc) {
+    flash = Flash::None;
+    Menu::open();
+  }
+}
+
+void pollKeyboard() {
+  auto& keyboard = M5Cardputer.Keyboard;
+  if (!keyboard.isChange() || !keyboard.isPressed()) return;
+  const auto& state = keyboard.keysState();
+  Key key;
+  key.enter = state.enter;
+  key.del = state.del;
+  for (char c : state.word) {
+    if (c == '`') key.esc = true;  // the key labeled Esc
+    else key.ch = c;
+  }
+  handleKey(key);
+}
+#endif
 }  // namespace
+
+#ifdef BJ_TEST_SERIAL
+#include <LittleFS.h>
+// Test builds only (-DBJ_TEST_SERIAL): lets a script drive the keys and add
+// sightings without a GPS fix. Published firmware doesn't include this.
+void bjTestCommand(const String& command) {
+  if (command == "fake") {
+    static int n = 0;
+    n++;
+    Sighting s{};
+    snprintf(s.utc, sizeof(s.utc), "2026-01-01T00:00:%02dZ", n % 60);
+    s.lat = 10 + n * 0.001;
+    s.lon = -20 - n * 0.001;
+    s.alt_m = (n % 2) ? 100.5f : NAN;
+    s.hdop = 1.2f;
+    s.sats = 9;
+    saveSighting(s);
+  } else if (command.startsWith("key ")) {
+#if BJ_HAS_KEYBOARD
+    const String name = command.substring(4);
+    Key key;
+    if (name == "enter") key.enter = true;
+    else if (name == "esc") key.esc = true;
+    else if (name == "del") key.del = true;
+    else key.ch = name[0];
+    handleKey(key);
+#endif
+  } else if (command == "idle") {
+    lastActivityMs = millis() - BJ_SCREEN_TIMEOUT_MS;
+  } else if (command == "pw") {
+    Serial.printf("pw=%s\n", ApPassword::get());
+  } else if (command == "set") {
+    Serial.printf("bright=%u volume=%u\n", Settings::brightness(), Settings::volume());
+  } else if (command == "oldlog") {
+    File f = LittleFS.open(BJ_LOG_PATH, "w");
+    f.print("id,utc,lat,lon,alt_m,hdop,sats\r\n1,2026-01-01T00:00:01Z,1.5000000,2.5000000,nan,0.90,8\n");
+    f.close();
+  } else if (command == "reboot") {
+    ESP.restart();
+  }
+#if BJ_HAS_KEYBOARD
+  Serial.printf("state menu=%s flash=%d screen=%d wifi=%d count=%lu\n",
+                Menu::screenName(), (int)flash, screenOn, WebExport::active(),
+                (unsigned long)store.count());
+#endif
+}
+#endif
 
 void setup() {
   auto cfg = M5.config();
+#if BJ_HAS_KEYBOARD
+  M5Cardputer.begin(cfg, true);
+#else
   M5.begin(cfg);
+#endif
   Serial.begin(115200);
   setCpuFrequencyMhz(BJ_CPU_MHZ);
   log_i("CPU %lu MHz", (unsigned long)getCpuFrequencyMhz());
-  M5.Display.setBrightness(BJ_SCREEN_BRIGHTNESS);
+  Settings::begin();
+  M5.Display.setBrightness(Settings::brightness());
 
 #if BJ_GROVE_5V_SWITCHED
   // Grove 5V is an input by default on StickS3; switch it to output so the
@@ -321,7 +477,7 @@ void setup() {
   canvas.setColorDepth(16);
   canvas.createSprite(M5.Display.width(), M5.Display.height());
 #if BJ_HAS_SPEAKER
-  M5.Speaker.setVolume(BJ_SPEAKER_VOLUME);
+  M5.Speaker.setVolume(Settings::volume());
 #endif
 #if BJ_HAS_BTN_B
   M5.BtnB.setHoldThresh(BJ_BTN_B_HOLD_WIFI_MS);
@@ -332,16 +488,26 @@ void setup() {
   storageOk = store.begin();
   ApPassword::begin();
   gps.begin();
+#if BJ_HAS_KEYBOARD
+  Menu::begin({&store, &gps, &storageOk, toggleWifi, beep});
+#endif
   lastActivityMs = millis();
   Serial.println("bluejay ready on " BJ_BOARD_NAME " — type 'help'");
 }
 
 void loop() {
+#if BJ_HAS_KEYBOARD
+  M5Cardputer.update();
+#else
   M5.update();
+#endif
   gps.poll();
   WebExport::poll();
   SerialConsole::poll(store, gps);
 
+#if BJ_HAS_KEYBOARD
+  pollKeyboard();
+#else
   // wasClicked() only fires on a release before the hold threshold, so a
   // long hold toggles Wi-Fi without also logging a sighting. Logging works with
   // the screen off, so a sighting is never lost to a press that only wakes it.
@@ -360,6 +526,7 @@ void loop() {
     wakeScreen();
     toggleWifi();
   }
+#endif
 #endif
 
   updateScreenTimeout();
