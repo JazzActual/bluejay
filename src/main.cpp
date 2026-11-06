@@ -1,15 +1,23 @@
-// bluejay — log ALPR / Flock camera sightings with GPS on an M5StickS3.
+// bluejay — log ALPR / Flock camera sightings with GPS.
+// Runs on M5StickS3 or AtomS3R (see platformio.ini / config.h).
 //
-// Button A (front): log a sighting at the current GPS fix.
-// Button B (side):  toggle the Wi-Fi export access point.
-// USB serial:       type "help" for dump/export commands.
+// StickS3: Button A (front) logs a sighting, Button B (side) toggles Wi-Fi.
+// AtomS3R: tap the screen button to log, hold it to toggle Wi-Fi.
+// USB serial: type "help" for dump/export commands.
 
 #include <M5Unified.h>
+#include "ap_password.h"
 #include "config.h"
 #include "gps_link.h"
 #include "log_store.h"
 #include "serial_console.h"
 #include "web_export.h"
+
+#if BJ_HAS_SPEAKER
+// Embedded by board_build.embed_files in platformio.ini.
+extern const uint8_t kBluejayWavStart[] asm("_binary_data_bluejaycall_wav_start");
+extern const uint8_t kBluejayWavEnd[] asm("_binary_data_bluejaycall_wav_end");
+#endif
 
 namespace {
 GpsLink gps;
@@ -22,7 +30,30 @@ Flash flash = Flash::None;
 uint32_t flashUntilMs = 0;
 uint32_t lastDrawMs = 0;
 
-void beep(uint16_t freq, uint32_t ms) { M5.Speaker.tone(freq, ms); }
+void beep(uint16_t freq, uint32_t ms) {
+#if BJ_HAS_SPEAKER
+  M5.Speaker.tone(freq, ms);
+#else
+  (void)freq;
+  (void)ms;
+#endif
+}
+
+// Played on a successful log. Restarts if a call is already playing.
+void playCall() {
+#if BJ_HAS_SPEAKER
+  M5.Speaker.playWav(kBluejayWavStart, kBluejayWavEnd - kBluejayWavStart, 1,
+                     0, true);
+#endif
+}
+
+// Small screens (AtomS3R 128x128) get a compact layout.
+bool compact() { return canvas.width() < 200; }
+
+void toggleWifi() {
+  if (WebExport::active()) WebExport::stop(); else WebExport::start(store);
+  lastDrawMs = 0;
+}
 
 void showFlash(Flash f) {
   flash = f;
@@ -50,7 +81,7 @@ void logSighting() {
   Serial.printf("logged #%lu %s %.7f,%.7f\n", (unsigned long)s.id, s.utc,
                 s.lat, s.lon);
   showFlash(Flash::Logged);
-  beep(2400, 60);
+  playCall();
 }
 
 void drawFlash() {
@@ -76,14 +107,87 @@ void drawFlash() {
   canvas.fillScreen(bg);
   canvas.setTextColor(TFT_WHITE, bg);
   canvas.setTextDatum(middle_center);
-  canvas.setFont(&fonts::FreeSansBold18pt7b);
-  canvas.drawString(title, canvas.width() / 2, canvas.height() / 2 - 14);
-  canvas.setFont(&fonts::FreeSans12pt7b);
-  canvas.drawString(sub, canvas.width() / 2, canvas.height() / 2 + 24);
+  const bool small = compact();
+  canvas.setFont(small ? &fonts::FreeSansBold12pt7b : &fonts::FreeSansBold18pt7b);
+  canvas.drawString(title, canvas.width() / 2, canvas.height() / 2 - (small ? 10 : 14));
+  canvas.setFont(small ? &fonts::FreeSans9pt7b : &fonts::FreeSans12pt7b);
+  canvas.drawString(sub, canvas.width() / 2, canvas.height() / 2 + (small ? 18 : 24));
   canvas.setTextDatum(top_left);
 }
 
+// 128x128 layout: Font2 gives ~16 chars x 8 rows.
+void drawStatusCompact() {
+  const int w = canvas.width();
+  canvas.fillScreen(TFT_BLACK);
+  canvas.setFont(&fonts::Font2);
+  canvas.setTextDatum(top_left);
+
+  canvas.setTextColor(TFT_ORANGE, TFT_BLACK);
+  canvas.drawString("BLUEJAY", 2, 1);
+  canvas.drawFastHLine(0, 18, w, TFT_DARKGREY);
+
+  if (WebExport::active()) {
+    canvas.setTextColor(TFT_CYAN, TFT_BLACK);
+    canvas.drawString(WebExport::ssid(), 2, 22);
+    canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    canvas.drawString("password:", 2, 38);
+    canvas.setTextColor(TFT_WHITE, TFT_BLACK);
+    // Must stay fully readable: it's how a changed password gets recovered.
+    if (canvas.textWidth(ApPassword::get()) > w - 4) canvas.setFont(&fonts::Font0);
+    canvas.drawString(ApPassword::get(), 2, 54);
+    canvas.setFont(&fonts::Font2);
+    canvas.drawString(WebExport::ip(), 2, 74);
+    canvas.drawFastHLine(0, 94, w, TFT_DARKGREY);
+    canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    canvas.drawString("tap: log", 2, 97);
+    canvas.drawString("hold: wifi off", 2, 112);
+    return;
+  }
+
+  int y = 21;
+  if (!gps.linkUp()) {
+    canvas.setTextColor(TFT_YELLOW, TFT_BLACK);
+    canvas.drawString("GPS searching", 2, y);
+    canvas.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    canvas.drawString("check GPS base", 2, y + 16);
+  } else if (!gps.hasFix()) {
+    canvas.setTextColor(TFT_RED, TFT_BLACK);
+    canvas.drawString("NO FIX", 2, y);
+    canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    canvas.drawString(String(gps.satellites()) + " sats", 2, y + 16);
+  } else {
+    canvas.setTextColor(TFT_GREEN, TFT_BLACK);
+    canvas.drawString("FIX " + String(gps.satellites()) + "sat H" +
+                          String(gps.hdop(), 1),
+                      2, y);
+    canvas.setTextColor(TFT_WHITE, TFT_BLACK);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%.6f", gps.lat());
+    canvas.drawString(buf, 2, y + 16);
+    snprintf(buf, sizeof(buf), "%.6f", gps.lon());
+    canvas.drawString(buf, 2, y + 32);
+  }
+
+  y = 74;
+  if (!storageOk) {
+    canvas.setTextColor(TFT_RED, TFT_BLACK);
+    canvas.drawString("STORAGE ERROR", 2, y);
+  } else {
+    canvas.setTextColor(TFT_WHITE, TFT_BLACK);
+    canvas.drawString("Logged: " + String(store.count()), 2, y);
+  }
+
+  canvas.drawFastHLine(0, 94, w, TFT_DARKGREY);
+  canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  canvas.drawString("tap: log", 2, 97);
+  canvas.drawString("hold: wifi", 2, 112);
+}
+
 void drawStatus() {
+  if (compact()) {
+    drawStatusCompact();
+    return;
+  }
   const int w = canvas.width();
   canvas.fillScreen(TFT_BLACK);
   canvas.setFont(&fonts::Font2);
@@ -91,11 +195,13 @@ void drawStatus() {
   // Header
   canvas.setTextColor(TFT_ORANGE, TFT_BLACK);
   canvas.drawString("BLUEJAY", 4, 2);
+#if BJ_HAS_BATTERY
   canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   int batt = M5.Power.getBatteryLevel();
   canvas.setTextDatum(top_right);
   canvas.drawString(String(batt) + "%" + (M5.Power.isCharging() ? "+" : ""), w - 4, 2);
   canvas.setTextDatum(top_left);
+#endif
   canvas.drawFastHLine(0, 20, w, TFT_DARKGREY);
 
   // GPS state
@@ -141,12 +247,17 @@ void drawStatus() {
   y = 92;
   if (WebExport::active()) {
     canvas.setTextColor(TFT_CYAN, TFT_BLACK);
-    canvas.drawString(String("AP ") + WebExport::ssid(), 4, y);
-    canvas.drawString(String("pw ") + BJ_AP_PASSWORD + "  " + WebExport::ip(), 4, y + 18);
+    canvas.drawString(String("AP ") + WebExport::ssid() + "  " + WebExport::ip(), 4, y);
+    canvas.drawString(String("pw ") + ApPassword::get(), 4, y + 18);
   } else {
     canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+#if BJ_HAS_BTN_B
     canvas.drawString("[A] log sighting", 4, y);
     canvas.drawString("[B] wifi export", 4, y + 18);
+#else
+    canvas.drawString("tap: log sighting", 4, y);
+    canvas.drawString("hold: wifi export", 4, y + 18);
+#endif
   }
 }
 
@@ -162,18 +273,28 @@ void setup() {
   M5.begin(cfg);
   Serial.begin(115200);
 
+#if BJ_GROVE_5V_SWITCHED
   // Grove 5V is an input by default on StickS3; switch it to output so the
   // GPS unit gets power.
   M5.Power.setExtOutput(true);
+#endif
 
+#if defined(BJ_BOARD_STICKS3)
   M5.Display.setRotation(1);  // landscape 240x135
+#endif
   canvas.setColorDepth(16);
   canvas.createSprite(M5.Display.width(), M5.Display.height());
+#if BJ_HAS_SPEAKER
   M5.Speaker.setVolume(BJ_SPEAKER_VOLUME);
+#endif
+#if !BJ_HAS_BTN_B
+  M5.BtnA.setHoldThresh(BJ_HOLD_WIFI_MS);
+#endif
 
   storageOk = store.begin();
+  ApPassword::begin();
   gps.begin();
-  Serial.println("bluejay ready — type 'help'");
+  Serial.println("bluejay ready on " BJ_BOARD_NAME " — type 'help'");
 }
 
 void loop() {
@@ -182,11 +303,14 @@ void loop() {
   WebExport::poll();
   SerialConsole::poll(store, gps);
 
+  // wasClicked() only fires on a release before the hold threshold, so a
+  // long hold toggles Wi-Fi without also logging a sighting.
   if (M5.BtnA.wasClicked()) logSighting();
-  if (M5.BtnB.wasClicked()) {
-    if (WebExport::active()) WebExport::stop(); else WebExport::start(store);
-    lastDrawMs = 0;
-  }
+#if BJ_HAS_BTN_B
+  if (M5.BtnB.wasClicked()) toggleWifi();
+#else
+  if (M5.BtnA.wasHold()) toggleWifi();
+#endif
 
   if (millis() - lastDrawMs > 200) {
     lastDrawMs = millis();
