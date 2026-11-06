@@ -46,3 +46,6 @@ Open the serial monitor and type:
 - `dump`: the log as CSV
 - `geojson`: the log as GeoJSON
 - `clear DELETE`: erase the log
+
+## Map viewer
+`docs/` is a GitHub Pages site that maps a CSV or GeoJSON export. Files stay in the browser.

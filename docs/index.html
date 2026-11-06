@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Files are read locally. connect-src 'none' stops this page sending them anywhere. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>BlueJay sighting map</title>
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="layout">
+    <aside class="panel">
+      <header class="panel-head">
+        <h1>BlueJay</h1>
+        <p>Open a sighting export to see it on the map.</p>
+      </header>
+
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept=".csv,.geojson,.json,.txt,text/csv,application/geo+json,application/json">
+        <strong>Choose a file</strong>
+        <span>or drop <code>sightings.csv</code> or <code>sightings.geojson</code> here</span>
+      </label>
+
+      <p class="privacy">Your file stays in this browser and isn't uploaded. The map background comes from OpenStreetMap, so its servers can see which area you're viewing.</p>
+
+      <p class="message" id="message" role="status" hidden></p>
+
+      <section class="results" id="results" hidden>
+        <h2 id="summary"></h2>
+        <p class="range" id="range"></p>
+        <ul class="legend" aria-label="GPS accuracy key">
+          <li><span class="dot good"></span>Good</li>
+          <li><span class="dot fair"></span>Fair</li>
+          <li><span class="dot poor"></span>Poor</li>
+          <li><span class="dot unknown"></span>Unknown</li>
+        </ul>
+        <ol class="list" id="list"></ol>
+      </section>
+
+      <button type="button" class="sample" id="sample">Try it with sample data</button>
+    </aside>
+
+    <div class="map" id="map" role="region" aria-label="Map of sightings"></div>
+  </main>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="parse.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
