@@ -4,6 +4,7 @@
 // StickS3: Button A (front) logs a sighting. Button B (side) turns the screen
 // on, and holding it for 3 s toggles Wi-Fi.
 // AtomS3R: tap the screen button to log, hold it to toggle Wi-Fi.
+// Cardputer ADV: press G0 to log, hold it to toggle Wi-Fi.
 // USB serial: type "help" for dump/export commands.
 
 #include <M5Unified.h>
@@ -279,7 +280,7 @@ void drawStatus() {
 #if BJ_HAS_BTN_B
     canvas.drawString("[B] hold 3s: wifi off", 4, y + 34);
 #else
-    canvas.drawString("hold: wifi off", 4, y + 34);
+    canvas.drawString("[G0] hold: wifi off", 4, y + 34);
 #endif
   } else {
     canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
@@ -287,8 +288,8 @@ void drawStatus() {
     canvas.drawString("[A] log sighting", 4, y);
     canvas.drawString("[B] hold 3s: wifi export", 4, y + 18);
 #else
-    canvas.drawString("tap: log sighting", 4, y);
-    canvas.drawString("hold: wifi export", 4, y + 18);
+    canvas.drawString("[G0] log sighting", 4, y);
+    canvas.drawString("[G0] hold: wifi export", 4, y + 18);
 #endif
   }
 }
@@ -314,7 +315,7 @@ void setup() {
   M5.Power.setExtOutput(true);
 #endif
 
-#if defined(BJ_BOARD_STICKS3)
+#if defined(BJ_BOARD_STICKS3) || defined(BJ_BOARD_CARDPUTER_ADV)
   M5.Display.setRotation(1);  // landscape 240x135
 #endif
   canvas.setColorDepth(16);

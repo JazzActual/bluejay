@@ -16,7 +16,7 @@ boot_app0="$core_dir/packages/framework-arduinoespressif32/tools/partitions/boot
 
 # Separate parts, not a merged image: a merged image would overwrite the gap at
 # 0x9000 holding NVS, which stores each device's Wi-Fi password.
-for env in m5stack-sticks3 m5stack-atoms3r; do
+for env in m5stack-sticks3 m5stack-atoms3r m5stack-cardputer-adv; do
   pio run -e "$env"
   out="docs/firmware/$env"
   mkdir -p "$out"

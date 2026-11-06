@@ -18,9 +18,10 @@ Named for the Blue Jay, a bird that is known for raiding the nests of other bird
 Controller (pick one):
 - [M5StickS3](https://docs.m5stack.com/en/core/StickS3) (ESP32-S3-PICO-1-N8R8, 135x240 ST7789P3, battery, speaker). The GPS goes on Grove G9/G10.
 - [AtomS3R](https://docs.m5stack.com/en/core/AtomS3R) (ESP32-S3-PICO-1-N8R8, 128x128, USB-C powered, one button). The GPS goes on Grove G2/G1.
+- [Cardputer ADV](https://docs.m5stack.com/en/core/Cardputer-Adv) (ESP32-S3FN8, 240x135, battery, speaker). The GPS goes on Grove G2/G1.
 
 GPS (both use the AT6668 chip and send NMEA at 115200 baud):
-- [Unit GPS v1.1](https://docs.m5stack.com/en/unit/Unit-GPS%20v1.1). Plugs into the controller's Grove port. Works with either controller.
+- [Unit GPS v1.1](https://docs.m5stack.com/en/unit/Unit-GPS%20v1.1). Plugs into the controller's Grove port. Works with any controller.
 - [Atomic GPS Base v2.0](https://docs.m5stack.com/en/atom/Atomic_GPS_Base_v2.0) (ATGM336H). The AtomS3R stacks on top and talks to it on G5 (RX) and G6 (TX). AtomS3R only. It has a built-in antenna, so it needs a view of the sky.
 
 On the AtomS3R the firmware checks for the Atomic GPS Base first and then falls back to the Grove port, so the same firmware works with either GPS.
@@ -35,6 +36,7 @@ At boot the firmware tries both Grove pin orientations at 115200 and then 9600 b
 brew install platformio
 pio run -e m5stack-sticks3 -t upload   # StickS3 (the default env)
 pio run -e m5stack-atoms3r -t upload   # AtomS3R
+pio run -e m5stack-cardputer-adv -t upload   # Cardputer ADV
 pio device monitor       # serial console, 115200
 ```
 
@@ -45,6 +47,8 @@ pio device monitor       # serial console, 115200
 | Button A (front) | Tap the screen | Log a sighting at the current fix. Refused with a red "NO FIX" screen if the fix is stale (>3 s) or missing. |
 | Button B (side) | | Turn the screen on |
 | Hold Button B for 3 s | Hold the screen for 1.5 s | Turn the Wi-Fi export AP on or off |
+
+On the Cardputer ADV, press G0 to log and hold it for 1.5 s for Wi-Fi.
 
 The AtomS3R has no speaker, so the green or red screen flash is the only confirmation.
 

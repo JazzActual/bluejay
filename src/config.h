@@ -25,8 +25,16 @@
   #define BJ_HAS_SPEAKER 0
   #define BJ_HAS_BTN_B 0        // single button: hold to toggle Wi-Fi
   #define BJ_GROVE_5V_SWITCHED 0  // Grove 5V comes straight from USB 5V
+#elif defined(BJ_BOARD_CARDPUTER_ADV)
+  #define BJ_BOARD_NAME "Cardputer ADV"
+  #define BJ_GPS_RX_PIN 1       // Grove white  (ESP32 RX <- GPS TX)
+  #define BJ_GPS_TX_PIN 2       // Grove yellow (ESP32 TX -> GPS RX)
+  #define BJ_HAS_BATTERY 1
+  #define BJ_HAS_SPEAKER 1
+  #define BJ_HAS_BTN_B 0        // G0 only: hold to toggle Wi-Fi
+  #define BJ_GROVE_5V_SWITCHED 0
 #else
-  #error "No board selected: build with -e m5stack-sticks3 or -e m5stack-atoms3r"
+  #error "No board selected: build with -e m5stack-sticks3, -e m5stack-atoms3r, or -e m5stack-cardputer-adv"
 #endif
 
 // Hold this long to toggle the Wi-Fi export AP.
