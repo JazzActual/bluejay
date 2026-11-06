@@ -3,13 +3,17 @@
 
   // Fictional points for the "sample data" link, in the CSV format the device writes.
   const SAMPLE_CSV = [
-    "id,utc,lat,lon,alt_m,hdop,sats",
-    "1,2026-03-14T15:04:11Z,39.7392000,-104.9903000,1609.3,0.80,12",
-    "2,2026-03-14T15:21:47Z,39.7508000,-104.9966000,1594.7,1.60,9",
-    "3,2026-03-14T15:38:02Z,39.7617000,-105.0118000,nan,3.40,6",
-    "4,2026-03-15T16:12:55Z,39.7294000,-104.9719000,1621.2,0.90,11",
-    "5,2026-03-15T16:40:30Z,39.7178000,-105.0044000,1602.8,7.20,4",
+    "id,utc,lat,lon,alt_m,hdop,sats,type",
+    "1,2026-03-14T15:04:11Z,39.7392000,-104.9903000,1609.3,0.80,12,flock",
+    "2,2026-03-14T15:21:47Z,39.7508000,-104.9966000,1594.7,1.60,9,alpr",
+    "3,2026-03-14T15:38:02Z,39.7617000,-105.0118000,nan,3.40,6,",
+    "4,2026-03-15T16:12:55Z,39.7294000,-104.9719000,1621.2,0.90,11,flock",
+    "5,2026-03-15T16:40:30Z,39.7178000,-105.0044000,1602.8,7.20,4,unknown",
   ].join("\n");
+
+  // Matches kSightingTypes in src/sighting.h. Other values are shown as they are.
+  const TYPE_LABELS = { flock: "Flock", alpr: "Other ALPR", unknown: "Unknown" };
+  const typeLabel = (type) => (type === null ? "No tag" : TYPE_LABELS[type] || type);
 
   const el = (id) => document.getElementById(id);
   const fileInput = el("file");
@@ -53,6 +57,7 @@
   function popupContent(s) {
     const q = quality(s.hdop);
     const rows = [
+      ["Type", typeLabel(s.type)],
       ["Time", formatTime(s.utc)],
       ["UTC", s.utc || "Unknown"],
       ["Position", s.lat.toFixed(7) + ", " + s.lon.toFixed(7)],
@@ -120,7 +125,7 @@
       num.textContent = s.id === null ? "–" : "#" + s.id;
       const when = document.createElement("span");
       when.className = "when";
-      when.textContent = formatTime(s.utc);
+      when.textContent = (s.type === null ? "" : typeLabel(s.type) + " · ") + formatTime(s.utc);
       button.append(dot, num, when);
       button.addEventListener("click", () => {
         map.setView([s.lat, s.lon], Math.max(map.getZoom(), 16));
