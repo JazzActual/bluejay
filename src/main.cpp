@@ -11,14 +11,12 @@
 #include "config.h"
 #if BJ_HAS_KEYBOARD
 #include <M5Cardputer.h>
-#include <driver/gpio.h>
-#include <driver/rtc_io.h>
-#include <esp_sleep.h>
 #endif
 #if BJ_HAS_MENU
 #include "menu.h"
 #endif
 #include "ap_password.h"
+#include "battery.h"
 #include "bluejay.h"
 #include "config.h"
 #include "gps_link.h"
@@ -45,13 +43,8 @@ uint32_t flashUntilMs = 0;
 uint32_t lastDrawMs = 0;
 bool screenOn = true;
 uint32_t lastActivityMs = 0;
-// Cardputer: the battery only charges with the power switch ON, so this sleeps
-// the device meanwhile. The GPS has no power switch and stays on.
+// Cardputer: the battery only charges with the power switch ON.
 bool chargingMode = false;
-#if BJ_HAS_KEYBOARD
-// Survives deep sleep but not a power cycle, so the switch always boots normally.
-RTC_DATA_ATTR bool rtcChargingSleep = false;
-#endif
 #ifdef BJ_TEST_SERIAL
 int testGpsState = -1;  // -1 real, 0 searching, 1 no fix, 2 fix
 bool testP0 = false;
@@ -87,19 +80,9 @@ void wakeScreen() {
 
 // Wi-Fi keeps the screen on: it shows the password and is a reminder that the
 // radio is draining the battery.
-#if BJ_HAS_KEYBOARD
-void enterChargingSleep();
-#endif
-
 void updateScreenTimeout() {
-  const uint32_t timeoutMs = chargingMode ? BJ_CHARGE_SHOW_MS : BJ_SCREEN_TIMEOUT_MS;
-  const bool idle = millis() - lastActivityMs >= timeoutMs;
-#if BJ_HAS_KEYBOARD
-  if (idle && chargingMode) {
-    enterChargingSleep();
-    return;
-  }
-#endif
+  if (chargingMode) return;  // the charging screen stays on, dimmed
+  const bool idle = millis() - lastActivityMs >= BJ_SCREEN_TIMEOUT_MS;
 #if BJ_HAS_MENU
   // Closes even if Wi-Fi keeps the screen on, so an idle device can't act on a
   // stray press inside the menu.
@@ -310,7 +293,7 @@ void drawTopBar(int w) {
   int rightEdge = w - 4;
 #if BJ_HAS_BATTERY
   canvas.setTextColor(TFT_LIGHTGREY, kBarColor);
-  const String batt = String(M5.Power.getBatteryLevel()) + "%" + (M5.Power.isCharging() ? "+" : "");
+  const String batt = String(Battery::percent()) + "%" + (Battery::powered() ? "+" : "");
   canvas.setTextDatum(top_right);
   canvas.drawString(batt, rightEdge, 2);
   canvas.setTextDatum(top_left);
@@ -458,125 +441,71 @@ void drawStatus() {
 }
 
 #if BJ_HAS_KEYBOARD
+// Wi-Fi off, GPS UART stopped, a dim screen with the battery, and any key or
+// unplugging exits.
+bool chargePowerSeen = false;
+uint32_t chargeUnplugMs = 0;
+uint8_t chargeAnim = 0;
+uint32_t chargeAnimMs = 0;
+
 void drawCharging() {
-  const int w = canvas.width();
+  static const char* const kAnim[] = {"~", "~~", "~~~", "~~"};
+  const int cx = canvas.width() / 2;
+  const int lineH = 18;
+  const int gap = 6;
+  const int y = (canvas.height() - (lineH * 3 + gap * 2)) / 2;
   canvas.fillScreen(TFT_BLACK);
-  canvas.pushImage(w - BLUEJAY_48_W - 4, 4, BLUEJAY_48_W, BLUEJAY_48_H, bluejay_48);
-  canvas.setTextDatum(top_left);
-  canvas.setFont(&fonts::Font2);
-  canvas.setTextColor(TFT_ORANGE, TFT_BLACK);
-  canvas.drawString("CHARGING MODE", 4, 4);
-  canvas.setFont(&fonts::FreeSansBold18pt7b);
+  canvas.setFont(&fonts::Font0);
+  canvas.setTextSize(2);
+  canvas.setTextDatum(top_center);
   canvas.setTextColor(TFT_WHITE, TFT_BLACK);
-  canvas.drawString(String(M5.Power.getBatteryLevel()) + "%", 4, 34);
-  canvas.setFont(&fonts::Font2);
-  canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  canvas.drawString(String(M5.Power.getBatteryVoltage() / 1000.0f, 2) + " V", 4, 76);
-  canvas.drawString("Wi-Fi and logging off", 4, 96);
-  canvas.drawString("[Esc] exit", 4, canvas.height() - 18);
+  const bool powered = Battery::powered();
+  canvas.drawString(powered ? String(kAnim[chargeAnim]) + " CHARGING " + kAnim[(chargeAnim + 2) % 4]
+                            : String("BATTERY"),
+                    cx, y);
+  String pct = String(Battery::percent()) + "%";
+  if (powered && Battery::percent() >= 100) pct += " FULL";
+  canvas.drawString(pct, cx, y + lineH + gap);
+  canvas.drawString(String(Battery::volts(), 2) + "V", cx, y + 2 * (lineH + gap));
+  canvas.setTextSize(1);
+  canvas.setTextDatum(top_left);
 }
 
 void startCharging() {
   if (WebExport::active()) WebExport::stop();
+  gps.sleep();
   flash = Flash::None;
   chargingMode = true;
+  chargePowerSeen = false;
+  chargeUnplugMs = 0;
   M5.Display.setBrightness(BJ_CHARGE_BRIGHTNESS);
-  lastActivityMs = millis();  // shows the battery once, then sleeps
   lastDrawMs = 0;
   log_i("Charging mode on");
 }
 
-// Cap LoRa-1262 pins. BlueJay never uses the radio, but the SX1262 idles in
-// standby after power-up; sleep cuts that.
-constexpr int kLoraNss = 5;
-constexpr int kLoraSck = 40;
-constexpr int kLoraMosi = 14;
-constexpr int kLoraBusy = 6;
-constexpr int kKeyboardIntPin = 11;  // TCA8418 INT, active low
-constexpr int kBacklightPin = 38;
-
-// Bit-banged: it's two bytes, and it leaves the SPI bus alone. Returns true if
-// the radio is asleep afterward (BUSY stays high in sleep).
-bool sleepLoRa() {
-  pinMode(kLoraBusy, INPUT);
-  if (digitalRead(kLoraBusy)) return true;  // already asleep from last time
-  gpio_hold_dis((gpio_num_t)kLoraNss);
-  pinMode(kLoraNss, OUTPUT);
-  digitalWrite(kLoraNss, HIGH);
-  pinMode(kLoraSck, OUTPUT);
-  digitalWrite(kLoraSck, LOW);
-  pinMode(kLoraMosi, OUTPUT);
-  digitalWrite(kLoraNss, LOW);
-  for (uint8_t b : {0x84, 0x00}) {  // SetSleep, cold start
-    for (int i = 7; i >= 0; i--) {
-      digitalWrite(kLoraMosi, (b >> i) & 1);
-      digitalWrite(kLoraSck, HIGH);
-      digitalWrite(kLoraSck, LOW);
-    }
-  }
-  digitalWrite(kLoraNss, HIGH);
-  gpio_hold_en((gpio_num_t)kLoraNss);  // a falling edge on NSS would wake it
-  delay(2);
-  return digitalRead(kLoraBusy);
-}
-
-// Clears pending key events so the keyboard's interrupt line goes idle; it
-// would wake the device straight away otherwise.
-bool clearKeyboardInterrupt() {
-  const uint8_t addr = 0x34;
-  const uint32_t freq = 400000;
-  for (int attempt = 0; attempt < 5; attempt++) {
-    for (int i = 0; i < 16 && M5.In_I2C.readRegister8(addr, 0x04, freq) != 0; i++) {}
-    for (uint8_t reg = 0x11; reg <= 0x13; reg++) M5.In_I2C.readRegister8(addr, reg, freq);
-    M5.In_I2C.writeRegister8(addr, 0x02, 0x0F, freq);
-    delay(5);
-    if (digitalRead(kKeyboardIntPin)) return true;
-  }
-  return false;
-}
-
-// Charging mode sleeps the whole device; a key wakes it, which restarts the
-// firmware into charging mode with the battery showing.
-void enterChargingSleep() {
-  const uint32_t start = millis();
-  while (millis() - start < 2000) {
-    M5Cardputer.update();
-    if (!M5Cardputer.Keyboard.isPressed()) break;
-    delay(10);
-  }
-  if (!clearKeyboardInterrupt()) {
-    lastActivityMs = millis();  // keeps the battery showing; tries again later
-    log_w("Keyboard interrupt stuck, not sleeping");
-    return;
-  }
-  const bool loraAsleep = sleepLoRa();
-  M5.Speaker.end();
-  M5.Mic.end();
-  M5.Imu.sleep();
-  M5.Display.setBrightness(0);
-  M5.Display.sleep();
-  pinMode(kBacklightPin, OUTPUT);
-  digitalWrite(kBacklightPin, LOW);
-  gpio_hold_en((gpio_num_t)kBacklightPin);
-  gpio_deep_sleep_hold_en();
-
-  rtcChargingSleep = true;
-  Serial.printf("charging: sleeping, lora=%s\n", loraAsleep ? "asleep" : "not asleep");
-  Serial.flush();
-  delay(50);
-  rtc_gpio_pullup_en((gpio_num_t)kKeyboardIntPin);
-  rtc_gpio_pulldown_dis((gpio_num_t)kKeyboardIntPin);
-  esp_sleep_enable_ext0_wakeup((gpio_num_t)kKeyboardIntPin, 0);
-  esp_deep_sleep_start();
-}
-
 void stopCharging() {
-  rtcChargingSleep = false;
   chargingMode = false;
+  gps.wake();
   M5.Display.setBrightness(Settings::brightness());
   lastActivityMs = millis();
   lastDrawMs = 0;
   log_i("Charging mode off");
+}
+
+// Leaves charging mode a few seconds after the charger is unplugged.
+void updateCharging() {
+  if (!chargingMode) return;
+  if (millis() - chargeAnimMs >= 500) {
+    chargeAnimMs = millis();
+    chargeAnim = (chargeAnim + 1) % 4;
+  }
+  if (Battery::powered()) {
+    chargePowerSeen = true;
+    chargeUnplugMs = 0;
+  } else if (chargePowerSeen) {
+    if (chargeUnplugMs == 0) chargeUnplugMs = millis();
+    else if (millis() - chargeUnplugMs > 3000) stopCharging();
+  }
 }
 #endif
 
@@ -624,9 +553,8 @@ void handleKey(const Key& key) {
   wakeScreen();
   lastDrawMs = 0;  // force redraw
 
-  // A key shows the battery; Esc exits only once it's showing.
-  if (chargingMode) {
-    if (wasOn && key.esc) stopCharging();
+  if (chargingMode) {  // any key exits
+    stopCharging();
     return;
   }
 
@@ -820,16 +748,7 @@ void setup() {
   setCpuFrequencyMhz(BJ_CPU_MHZ);
   log_i("CPU %lu MHz", (unsigned long)getCpuFrequencyMhz());
   Settings::begin();
-#if BJ_HAS_KEYBOARD
-  // A key woke it from charging mode's sleep.
-  const bool wokeToCharge =
-      rtcChargingSleep && esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0;
-  rtcChargingSleep = false;
-  gpio_hold_dis((gpio_num_t)kBacklightPin);
-  M5.Display.setBrightness(wokeToCharge ? BJ_CHARGE_BRIGHTNESS : Settings::brightness());
-#else
   M5.Display.setBrightness(Settings::brightness());
-#endif
 
 #if BJ_GROVE_5V_SWITCHED
   // Grove 5V is an input by default on StickS3; switch it to output so the
@@ -852,6 +771,7 @@ void setup() {
   M5.BtnA.setHoldThresh(BJ_HOLD_WIFI_MS);
 #endif
 
+  Battery::begin();
   storageOk = store.begin();
   ApPassword::begin();
   gps.begin();
@@ -863,9 +783,6 @@ void setup() {
 #endif
 #endif
   lastActivityMs = millis();
-#if BJ_HAS_KEYBOARD
-  if (wokeToCharge) startCharging();
-#endif
   Serial.println("bluejay ready on " BJ_BOARD_NAME " — type 'help'");
 }
 
@@ -876,6 +793,10 @@ void loop() {
   M5.update();
 #endif
   gps.poll();
+  Battery::poll();
+#if BJ_HAS_KEYBOARD
+  updateCharging();
+#endif
   WebExport::poll();
   SerialConsole::poll(store, gps);
 
@@ -917,10 +838,11 @@ void loop() {
     lastGpsLogMs = millis();
     File f = LittleFS.open("/gpstest.csv", "a");
     if (f) {
-      f.printf("%lu,link=%d,fix=%d,used=%lu,view=%lu,best=%d,ant_open=%d,p0=%d,batt=%d\n",
+      f.printf("%lu,link=%d,fix=%d,used=%lu,view=%lu,best=%d,ant_open=%d,p0=%d,batt=%d,mv=%d,avg=%.3f,pw=%d\n",
                (unsigned long)(millis() / 1000), gps.linkUp(), gps.hasFix(),
                (unsigned long)gps.satellites(), (unsigned long)gps.satellitesInView(),
-               gps.bestSignalDb(), gps.antennaOpen(), testP0, (int)M5.Power.getBatteryLevel());
+               gps.bestSignalDb(), gps.antennaOpen(), testP0, (int)Battery::percent(),
+               (int)M5.Power.getBatteryVoltage(), Battery::volts(), Battery::powered());
       f.close();
     }
   }

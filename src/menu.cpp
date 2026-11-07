@@ -2,6 +2,7 @@
 
 #if BJ_HAS_MENU
 #include "ap_password.h"
+#include "battery.h"
 #include "settings.h"
 #include "web_export.h"
 
@@ -274,7 +275,7 @@ void drawGps(M5Canvas& c) {
   c.drawString("In view: " + String(gps.satellitesInView()) + "  best " +
                    String(gps.bestSignalDb()) + " dB",
                4, 73);
-  c.drawString(String("Battery: ") + M5.Power.getBatteryLevel() + "%" +
+  c.drawString(String("Battery: ") + Battery::percent() + "%" +
                    (gps.antennaOpen() ? "  ant: open" : ""),
                4, 90);
   footer(c, HINT("[Esc] back", "[A] back"));

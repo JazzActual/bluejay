@@ -1,6 +1,7 @@
 #include "serial_console.h"
 #include <Arduino.h>
 #include <M5Unified.h>
+#include "battery.h"
 
 #ifdef BJ_TEST_SERIAL
 void bjTestCommand(const String& command);  // main.cpp
@@ -28,8 +29,9 @@ void run(const String& cmd, LogStore& store, GpsLink& gps) {
                   (unsigned long)gps.satellites(), gps.hdop());
     Serial.printf("sightings=%lu\n", (unsigned long)store.count());
     const auto charging = M5.Power.isCharging();
-    Serial.printf("battery=%ld%% %dmV charging=%s\n", (long)M5.Power.getBatteryLevel(),
-                  (int)M5.Power.getBatteryVoltage(),
+    Serial.printf("battery=%u%% %dmV avg=%.3fV powered=%d charging=%s\n",
+                  Battery::percent(), (int)M5.Power.getBatteryVoltage(), Battery::volts(),
+                  Battery::powered(),
                   charging == m5::Power_Class::is_charging ? "yes"
                   : charging == m5::Power_Class::is_discharging ? "no" : "unknown");
   } else if (cmd == "dump") {

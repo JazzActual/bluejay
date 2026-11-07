@@ -37,7 +37,20 @@ void GpsLink::applyProbe(uint8_t idx) {
   log_i("GPS probe: rx=G%d tx=G%d baud=%lu", p.rx, p.tx, (unsigned long)p.baud);
 }
 
+void GpsLink::sleep() {
+  gpsSerial.end();
+  _asleep = true;
+  _locked = false;
+}
+
+void GpsLink::wake() {
+  if (!_asleep) return;
+  _asleep = false;
+  applyProbe(_probe);
+}
+
 void GpsLink::poll() {
+  if (_asleep) return;
   while (gpsSerial.available()) {
     const char c = gpsSerial.read();
 #ifdef BJ_TEST_SERIAL

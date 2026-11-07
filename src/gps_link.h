@@ -9,6 +9,8 @@ class GpsLink {
  public:
   void begin();
   void poll();
+  void sleep();  // stops reading; the GPS stays powered
+  void wake();
 
   bool linkUp() const { return _locked; }
   bool hasFix();
@@ -38,6 +40,7 @@ class GpsLink {
   uint32_t _lastGoodMs = 0;
   uint32_t _lastPassed = 0;
   bool _locked = false;
+  bool _asleep = false;
 
   static constexpr int kNumTalkers = 6;
   char _line[100] = {0};
