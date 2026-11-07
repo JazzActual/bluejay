@@ -1,5 +1,6 @@
 #include "serial_console.h"
 #include <Arduino.h>
+#include <M5Unified.h>
 
 #ifdef BJ_TEST_SERIAL
 void bjTestCommand(const String& command);  // main.cpp
@@ -11,7 +12,7 @@ String line;
 void printHelp() {
   Serial.println(
       "bluejay commands:\n"
-      "  status        GPS + log status\n"
+      "  status        GPS, log, and battery status\n"
       "  dump          print log as CSV\n"
       "  geojson       print log as GeoJSON\n"
       "  clear DELETE  erase all sightings");
@@ -26,6 +27,11 @@ void run(const String& cmd, LogStore& store, GpsLink& gps) {
                   (unsigned long)gps.baud(), gps.hasFix() ? "yes" : "no",
                   (unsigned long)gps.satellites(), gps.hdop());
     Serial.printf("sightings=%lu\n", (unsigned long)store.count());
+    const auto charging = M5.Power.isCharging();
+    Serial.printf("battery=%ld%% %dmV charging=%s\n", (long)M5.Power.getBatteryLevel(),
+                  (int)M5.Power.getBatteryVoltage(),
+                  charging == m5::Power_Class::is_charging ? "yes"
+                  : charging == m5::Power_Class::is_discharging ? "no" : "unknown");
   } else if (cmd == "dump") {
     Serial.println("-----BEGIN CSV-----");
     store.streamCsv(Serial);
