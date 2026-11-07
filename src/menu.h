@@ -22,6 +22,7 @@ struct Host {
   bool* storageOk;
   void (*toggleWifi)();
   void (*beep)(uint16_t freq, uint32_t ms);
+  void (*startCharging)();  // keyboard boards only
 };
 
 void begin(const Host& host);

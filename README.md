@@ -51,7 +51,7 @@ pio device monitor       # serial console, 115200
 
 In the StickS3 menu, B moves to the next item, A selects, and holding B for 1 s goes back.
 
-On the Cardputer ADV, Enter logs a sighting and Esc opens the menu. Press F (Flock), V (Vigilant), G (Genetec), or A (Axon) within 5 s of logging to tag it, or it's logged as other. Keep the power switch OFF when connecting it to a computer.
+On the Cardputer ADV, Enter logs a sighting and Esc opens the menu. Press F (Flock), V (Vigilant), G (Genetec), or A (Axon) within 5 s of logging to tag it, or it's logged as other. Keep the power switch OFF when connecting it to a computer. The battery only charges with the switch ON: pick Charging mode in the menu to turn off the screen and Wi-Fi meanwhile. Press a key to see the battery, then Esc to exit.
 
 The AtomS3R has no speaker, so the green or red screen flash is the only confirmation.
 

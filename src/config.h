@@ -84,3 +84,6 @@
 #define BJ_LOOP_DELAY_MS 10     // idle time per loop; the GPS UART buffers meanwhile
 #define BJ_SCREEN_BRIGHTNESS 80 // 0-255
 #define BJ_SCREEN_TIMEOUT_MS 30000  // stays on while Wi-Fi is on
+// Cardputer charging mode: how long a key press shows the battery, and how bright.
+#define BJ_CHARGE_SHOW_MS 5000
+#define BJ_CHARGE_BRIGHTNESS 20

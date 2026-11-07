@@ -28,6 +28,7 @@ enum class Screen {
   Brightness,
   Volume,
   Message,
+  Charging,  // not drawn: the item hands off to charging mode
 };
 
 #if BJ_HAS_KEYBOARD
@@ -35,11 +36,13 @@ const char* const kItems[] = {
     "Wi-Fi export",      "Change password", "New random password",
     "Sightings",         "Delete last sighting", "Clear log",
     "GPS status",        "Screen brightness",    "Speaker volume",
+    "Charging mode",
 };
 const Screen kItemScreens[] = {
     Screen::Wifi,       Screen::Password,      Screen::ConfirmRandom,
     Screen::Browse,     Screen::ConfirmDelete, Screen::Clear,
     Screen::Gps,        Screen::Brightness,    Screen::Volume,
+    Screen::Charging,
 };
 const int kVisibleRows = 6;
 #else
@@ -87,6 +90,11 @@ void showMessage(const String& text) {
 void enterItem() {
   typed = "";
   const Screen next = kItemScreens[selected];
+  if (next == Screen::Charging) {
+    Menu::close();
+    host.startCharging();
+    return;
+  }
   const bool needsSightings = next == Screen::Browse || next == Screen::ConfirmDelete;
   if (needsSightings && host.store->count() == 0) {
     showMessage("No sightings yet");
@@ -441,6 +449,7 @@ const char* screenName() {
     case Screen::Brightness: return "brightness";
     case Screen::Volume: return "volume";
     case Screen::Message: return "message";
+    case Screen::Charging: return "charging";
   }
   return "?";
 }

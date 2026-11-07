@@ -42,6 +42,9 @@ uint32_t flashUntilMs = 0;
 uint32_t lastDrawMs = 0;
 bool screenOn = true;
 uint32_t lastActivityMs = 0;
+// Cardputer: the battery only charges with the power switch ON, so this keeps
+// the screen and Wi-Fi off meanwhile. The GPS has no power switch and stays on.
+bool chargingMode = false;
 #ifdef BJ_TEST_SERIAL
 int testGpsState = -1;  // -1 real, 0 searching, 1 no fix, 2 fix
 bool testP0 = false;
@@ -69,7 +72,7 @@ void wakeScreen() {
   lastActivityMs = millis();
   if (screenOn) return;
   M5.Display.wakeup();
-  M5.Display.setBrightness(Settings::brightness());
+  M5.Display.setBrightness(chargingMode ? BJ_CHARGE_BRIGHTNESS : Settings::brightness());
   screenOn = true;
   lastDrawMs = 0;  // force redraw
   log_i("Screen on");
@@ -78,7 +81,8 @@ void wakeScreen() {
 // Wi-Fi keeps the screen on: it shows the password and is a reminder that the
 // radio is draining the battery.
 void updateScreenTimeout() {
-  const bool idle = millis() - lastActivityMs >= BJ_SCREEN_TIMEOUT_MS;
+  const uint32_t timeoutMs = chargingMode ? BJ_CHARGE_SHOW_MS : BJ_SCREEN_TIMEOUT_MS;
+  const bool idle = millis() - lastActivityMs >= timeoutMs;
 #if BJ_HAS_MENU
   // Closes even if Wi-Fi keeps the screen on, so an idle device can't act on a
   // stray press inside the menu.
@@ -436,8 +440,53 @@ void drawStatus() {
   drawBottomBar(w, h);
 }
 
+#if BJ_HAS_KEYBOARD
+void drawCharging() {
+  const int w = canvas.width();
+  canvas.fillScreen(TFT_BLACK);
+  canvas.pushImage(w - BLUEJAY_48_W - 4, 4, BLUEJAY_48_W, BLUEJAY_48_H, bluejay_48);
+  canvas.setTextDatum(top_left);
+  canvas.setFont(&fonts::Font2);
+  canvas.setTextColor(TFT_ORANGE, TFT_BLACK);
+  canvas.drawString("CHARGING MODE", 4, 4);
+  canvas.setFont(&fonts::FreeSansBold18pt7b);
+  canvas.setTextColor(TFT_WHITE, TFT_BLACK);
+  canvas.drawString(String(M5.Power.getBatteryLevel()) + "%", 4, 34);
+  canvas.setFont(&fonts::Font2);
+  canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  canvas.drawString(String(M5.Power.getBatteryVoltage() / 1000.0f, 2) + " V", 4, 76);
+  canvas.drawString("Wi-Fi and logging off", 4, 96);
+  canvas.drawString("[Esc] exit", 4, canvas.height() - 18);
+}
+
+void startCharging() {
+  if (WebExport::active()) WebExport::stop();
+  flash = Flash::None;
+  chargingMode = true;
+  M5.Display.setBrightness(BJ_CHARGE_BRIGHTNESS);
+  lastActivityMs = millis();  // shows the battery once, then goes dark
+  lastDrawMs = 0;
+  log_i("Charging mode on");
+}
+
+void stopCharging() {
+  chargingMode = false;
+  M5.Display.setBrightness(Settings::brightness());
+  lastActivityMs = millis();
+  lastDrawMs = 0;
+  log_i("Charging mode off");
+}
+#endif
+
 void draw() {
   if (flash != Flash::None && millis() > flashUntilMs) flash = Flash::None;
+#if BJ_HAS_KEYBOARD
+  if (chargingMode) {
+    drawCharging();
+    canvas.pushSprite(0, 0);
+    return;
+  }
+#endif
 #if BJ_HAS_MENU
   if (Menu::active()) {
     Menu::draw(canvas);
@@ -472,6 +521,12 @@ void handleKey(const Key& key) {
   const bool wasOn = screenOn;
   wakeScreen();
   lastDrawMs = 0;  // force redraw
+
+  // A key shows the battery; Esc exits only once it's showing.
+  if (chargingMode) {
+    if (wasOn && key.esc) stopCharging();
+    return;
+  }
 
   // With the screen off, Enter logs and every other key only wakes it.
   if (!wasOn) {
@@ -646,7 +701,7 @@ void bjTestCommand(const String& command) {
   }
 #if BJ_HAS_MENU
   Serial.printf("state menu=%s flash=%d screen=%d wifi=%d count=%lu\n",
-                Menu::screenName(), (int)flash, screenOn, WebExport::active(),
+                chargingMode ? "charging" : Menu::screenName(), (int)flash, screenOn, WebExport::active(),
                 (unsigned long)store.count());
 #endif
 }
@@ -690,7 +745,11 @@ void setup() {
   ApPassword::begin();
   gps.begin();
 #if BJ_HAS_MENU
-  Menu::begin({&store, &gps, &storageOk, toggleWifi, beep});
+#if BJ_HAS_KEYBOARD
+  Menu::begin({&store, &gps, &storageOk, toggleWifi, beep, startCharging});
+#else
+  Menu::begin({&store, &gps, &storageOk, toggleWifi, beep, nullptr});
+#endif
 #endif
   lastActivityMs = millis();
   Serial.println("bluejay ready on " BJ_BOARD_NAME " — type 'help'");
