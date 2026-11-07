@@ -11,6 +11,9 @@
 #include "config.h"
 #if BJ_HAS_KEYBOARD
 #include <M5Cardputer.h>
+#include <driver/gpio.h>
+#include <driver/rtc_io.h>
+#include <esp_sleep.h>
 #endif
 #if BJ_HAS_MENU
 #include "menu.h"
@@ -42,9 +45,13 @@ uint32_t flashUntilMs = 0;
 uint32_t lastDrawMs = 0;
 bool screenOn = true;
 uint32_t lastActivityMs = 0;
-// Cardputer: the battery only charges with the power switch ON, so this keeps
-// the screen and Wi-Fi off meanwhile. The GPS has no power switch and stays on.
+// Cardputer: the battery only charges with the power switch ON, so this sleeps
+// the device meanwhile. The GPS has no power switch and stays on.
 bool chargingMode = false;
+#if BJ_HAS_KEYBOARD
+// Survives deep sleep but not a power cycle, so the switch always boots normally.
+RTC_DATA_ATTR bool rtcChargingSleep = false;
+#endif
 #ifdef BJ_TEST_SERIAL
 int testGpsState = -1;  // -1 real, 0 searching, 1 no fix, 2 fix
 bool testP0 = false;
@@ -80,9 +87,19 @@ void wakeScreen() {
 
 // Wi-Fi keeps the screen on: it shows the password and is a reminder that the
 // radio is draining the battery.
+#if BJ_HAS_KEYBOARD
+void enterChargingSleep();
+#endif
+
 void updateScreenTimeout() {
   const uint32_t timeoutMs = chargingMode ? BJ_CHARGE_SHOW_MS : BJ_SCREEN_TIMEOUT_MS;
   const bool idle = millis() - lastActivityMs >= timeoutMs;
+#if BJ_HAS_KEYBOARD
+  if (idle && chargingMode) {
+    enterChargingSleep();
+    return;
+  }
+#endif
 #if BJ_HAS_MENU
   // Closes even if Wi-Fi keeps the screen on, so an idle device can't act on a
   // stray press inside the menu.
@@ -464,12 +481,97 @@ void startCharging() {
   flash = Flash::None;
   chargingMode = true;
   M5.Display.setBrightness(BJ_CHARGE_BRIGHTNESS);
-  lastActivityMs = millis();  // shows the battery once, then goes dark
+  lastActivityMs = millis();  // shows the battery once, then sleeps
   lastDrawMs = 0;
   log_i("Charging mode on");
 }
 
+// Cap LoRa-1262 pins. BlueJay never uses the radio, but the SX1262 idles in
+// standby after power-up; sleep cuts that.
+constexpr int kLoraNss = 5;
+constexpr int kLoraSck = 40;
+constexpr int kLoraMosi = 14;
+constexpr int kLoraBusy = 6;
+constexpr int kKeyboardIntPin = 11;  // TCA8418 INT, active low
+constexpr int kBacklightPin = 38;
+
+// Bit-banged: it's two bytes, and it leaves the SPI bus alone. Returns true if
+// the radio is asleep afterward (BUSY stays high in sleep).
+bool sleepLoRa() {
+  pinMode(kLoraBusy, INPUT);
+  if (digitalRead(kLoraBusy)) return true;  // already asleep from last time
+  gpio_hold_dis((gpio_num_t)kLoraNss);
+  pinMode(kLoraNss, OUTPUT);
+  digitalWrite(kLoraNss, HIGH);
+  pinMode(kLoraSck, OUTPUT);
+  digitalWrite(kLoraSck, LOW);
+  pinMode(kLoraMosi, OUTPUT);
+  digitalWrite(kLoraNss, LOW);
+  for (uint8_t b : {0x84, 0x00}) {  // SetSleep, cold start
+    for (int i = 7; i >= 0; i--) {
+      digitalWrite(kLoraMosi, (b >> i) & 1);
+      digitalWrite(kLoraSck, HIGH);
+      digitalWrite(kLoraSck, LOW);
+    }
+  }
+  digitalWrite(kLoraNss, HIGH);
+  gpio_hold_en((gpio_num_t)kLoraNss);  // a falling edge on NSS would wake it
+  delay(2);
+  return digitalRead(kLoraBusy);
+}
+
+// Clears pending key events so the keyboard's interrupt line goes idle; it
+// would wake the device straight away otherwise.
+bool clearKeyboardInterrupt() {
+  const uint8_t addr = 0x34;
+  const uint32_t freq = 400000;
+  for (int attempt = 0; attempt < 5; attempt++) {
+    for (int i = 0; i < 16 && M5.In_I2C.readRegister8(addr, 0x04, freq) != 0; i++) {}
+    for (uint8_t reg = 0x11; reg <= 0x13; reg++) M5.In_I2C.readRegister8(addr, reg, freq);
+    M5.In_I2C.writeRegister8(addr, 0x02, 0x0F, freq);
+    delay(5);
+    if (digitalRead(kKeyboardIntPin)) return true;
+  }
+  return false;
+}
+
+// Charging mode sleeps the whole device; a key wakes it, which restarts the
+// firmware into charging mode with the battery showing.
+void enterChargingSleep() {
+  const uint32_t start = millis();
+  while (millis() - start < 2000) {
+    M5Cardputer.update();
+    if (!M5Cardputer.Keyboard.isPressed()) break;
+    delay(10);
+  }
+  if (!clearKeyboardInterrupt()) {
+    lastActivityMs = millis();  // keeps the battery showing; tries again later
+    log_w("Keyboard interrupt stuck, not sleeping");
+    return;
+  }
+  const bool loraAsleep = sleepLoRa();
+  M5.Speaker.end();
+  M5.Mic.end();
+  M5.Imu.sleep();
+  M5.Display.setBrightness(0);
+  M5.Display.sleep();
+  pinMode(kBacklightPin, OUTPUT);
+  digitalWrite(kBacklightPin, LOW);
+  gpio_hold_en((gpio_num_t)kBacklightPin);
+  gpio_deep_sleep_hold_en();
+
+  rtcChargingSleep = true;
+  Serial.printf("charging: sleeping, lora=%s\n", loraAsleep ? "asleep" : "not asleep");
+  Serial.flush();
+  delay(50);
+  rtc_gpio_pullup_en((gpio_num_t)kKeyboardIntPin);
+  rtc_gpio_pulldown_dis((gpio_num_t)kKeyboardIntPin);
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)kKeyboardIntPin, 0);
+  esp_deep_sleep_start();
+}
+
 void stopCharging() {
+  rtcChargingSleep = false;
   chargingMode = false;
   M5.Display.setBrightness(Settings::brightness());
   lastActivityMs = millis();
@@ -718,7 +820,16 @@ void setup() {
   setCpuFrequencyMhz(BJ_CPU_MHZ);
   log_i("CPU %lu MHz", (unsigned long)getCpuFrequencyMhz());
   Settings::begin();
+#if BJ_HAS_KEYBOARD
+  // A key woke it from charging mode's sleep.
+  const bool wokeToCharge =
+      rtcChargingSleep && esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0;
+  rtcChargingSleep = false;
+  gpio_hold_dis((gpio_num_t)kBacklightPin);
+  M5.Display.setBrightness(wokeToCharge ? BJ_CHARGE_BRIGHTNESS : Settings::brightness());
+#else
   M5.Display.setBrightness(Settings::brightness());
+#endif
 
 #if BJ_GROVE_5V_SWITCHED
   // Grove 5V is an input by default on StickS3; switch it to output so the
@@ -752,6 +863,9 @@ void setup() {
 #endif
 #endif
   lastActivityMs = millis();
+#if BJ_HAS_KEYBOARD
+  if (wokeToCharge) startCharging();
+#endif
   Serial.println("bluejay ready on " BJ_BOARD_NAME " — type 'help'");
 }
 
