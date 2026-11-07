@@ -4,6 +4,10 @@
 #include "ap_password.h"
 #include "config.h"
 
+namespace WebExport {
+void restartSoon();
+}
+
 namespace {
 WebServer* server = nullptr;
 LogStore* store = nullptr;
@@ -86,8 +90,7 @@ void handlePassword() {
                String("Password changed. Reconnect to ") + apSsid +
                    " using the new password shown on the device screen.");
   // Wait so this response gets out before the network restarts.
-  restartAtMs = millis() + 1000;
-  if (restartAtMs == 0) restartAtMs = 1;
+  WebExport::restartSoon();
 }
 
 void handleCsv() {
@@ -156,6 +159,11 @@ void stop() {
   server = nullptr;
   WiFi.softAPdisconnect(true);
   WiFi.mode(WIFI_OFF);
+}
+
+void restartSoon() {
+  restartAtMs = millis() + 1000;
+  if (restartAtMs == 0) restartAtMs = 1;
 }
 
 void poll() {

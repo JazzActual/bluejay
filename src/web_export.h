@@ -7,6 +7,7 @@ namespace WebExport {
 void start(LogStore& store);
 void stop();
 void poll();
+void restartSoon();  // applies a new password after a moment
 bool active();
 const char* ssid();
 String ip();

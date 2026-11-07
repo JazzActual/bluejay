@@ -50,6 +50,7 @@
         alt_m: toNumber(cells[col("alt_m")]),
         hdop: toNumber(cells[col("hdop")]),
         sats: toNumber(cells[col("sats")]),
+        type: col("type") === -1 ? null : (cells[col("type")] || "").trim() || null,
       });
     }
     return { sightings, skipped };
@@ -87,6 +88,7 @@
         alt_m: toNumber(props.alt_m),
         hdop: toNumber(props.hdop),
         sats: toNumber(props.sats),
+        type: typeof props.type === "string" && props.type !== "" ? props.type : null,
       });
     }
     return { sightings, skipped };
